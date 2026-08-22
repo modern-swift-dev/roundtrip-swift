@@ -39,7 +39,7 @@ const home = page(
 const documentation = page(
     "RoundTrip documentation",
     "RoundTrip and RoundTripREST API references.",
-    `<section><p class="eyebrow">Documentation</p><h1>API references</h1><div class="cards"><article><h2>RoundTrip</h2><p>The HTTP library.</p><a href="${path("/api/roundtrip/")}">Open the API reference</a></article><article><h2>RoundTripREST</h2><p>REST client support built on RoundTrip.</p><a href="${path("/api/roundtrip-rest/")}">Open the API reference</a></article></div></section>`
+    `<section><p class="eyebrow">Documentation</p><h1>API references</h1><div class="cards"><article><h2>RoundTrip</h2><p>The HTTP library.</p><a href="${path("/api/roundtrip/documentation/roundtrip/")}">Open the API reference</a></article><article><h2>RoundTripREST</h2><p>REST client support built on RoundTrip.</p><a href="${path("/api/roundtrip-rest/")}">Open the API reference</a></article></div></section>`
 );
 
 const examples = page(
