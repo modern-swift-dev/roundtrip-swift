@@ -1,0 +1,296 @@
+#if canImport(Combine)
+    import Combine
+    import Foundation
+
+    #if canImport(FoundationNetworking)
+        import FoundationNetworking
+    #endif
+
+    /// A WebSocket client implementation supporting automatic reconnection and keep-alive.
+    /// Provides a Combine-based interface for WebSocket events.
+    ///
+    /// Example:
+    /// ```swift
+    /// let client = try httpClient.webSocketClient(request: wsRequest)
+    /// client.event.sink { event in
+    ///     // Handle WebSocket events
+    /// }
+    /// client.connect()
+    /// ```
+    ///
+    /// WebSocket state, events, and task lifetimes are isolated to the main actor.
+    @MainActor public final class WSSClient: NSObject {
+
+        /// The possible events for a websocket
+        public enum WSSEvent {
+
+            /// Connect
+            case connected
+
+            /// Disconnected with specified close code
+            case disconnected(URLSessionWebSocketTask.CloseCode)
+
+            /// A failure
+            case failure(any Error)
+
+            /// Successfully sent a ping
+            case pingSent
+
+            /// Failed to send ping
+            case pingFailed(any Error)
+
+            /// Successfully sent message
+            case messageSent(UUID)
+
+            /// Failed to send message
+            case messageFailed(UUID, any Error)
+
+            /// Text Message received
+            case textMessageReceived(String)
+
+            /// Binary message received
+            case binaryMessageReceived(Data)
+
+            /// Unsupported message type received
+            case unsupportedMessageReceived
+        }
+
+        /// The possible events for a websocket
+        public enum WSSState {
+
+            /// Connect
+            case connected
+
+            /// Disconnected with specified close code
+            case disconnected(URLSessionWebSocketTask.CloseCode)
+
+            public var isConnected: Bool {
+                switch self {
+                    case .connected:
+                        true
+                    default:
+                        false
+                }
+            }
+        }
+
+        /// The Keep Alive Configuration
+        public struct KeepAliveConfig {
+
+            /// Enabled?
+            public var enabled: Bool
+
+            /// Delay for the keep-alive
+            public var delay: TimeInterval
+
+            /// Initializer
+            public init(enabled: Bool = false, delay: TimeInterval = 30.0) {
+                self.enabled = enabled
+                self.delay = delay
+            }
+        }
+
+        /// The `URLSessionWebSocketTask`
+        private let task: URLSessionWebSocketTask
+
+        /// The current state of the web-socket
+        @Published public private(set) var state: WSSState = .disconnected(.normalClosure)
+
+        /// The events
+        public private(set) var event: PassthroughSubject<WSSEvent, Never> = .init()
+
+        /// THe Keep Alive Config
+        public private(set) var keepAliveConfig: KeepAliveConfig
+
+        /// The Keep Alive Cancellable
+        private var keepAliveCancellable: AnyCancellable?
+
+        /// The Listen Cancellable
+        private var listenCancellable: AnyCancellable?
+
+        /// Initializer
+        /// - parameter wssTask: The WebSocket task
+        /// - parameter keepAlive: The keep-alive timer configuration
+        public init(task wssTask: URLSessionWebSocketTask, keepAlive: KeepAliveConfig = .init(enabled: false, delay: 30.0)) {
+            task = wssTask
+            keepAliveConfig = keepAlive
+            super.init()
+            task.delegate = self
+            configureKeepAliveTimer()
+        }
+
+        private func stopListening() {
+            listenCancellable?.cancel()
+            listenCancellable = nil
+        }
+    }
+
+    // MARK: - Message Methods
+    public extension WSSClient {
+
+        private func configureKeepAliveTimer() {
+            keepAliveCancellable?.cancel()
+            keepAliveCancellable = nil
+            if keepAliveConfig.enabled, keepAliveConfig.delay > 0.0 {
+                keepAliveCancellable = Timer.publish(
+                    every: keepAliveConfig.delay,
+                    tolerance: nil,
+                    on: RunLoop.main,
+                    in: .default
+                )
+                .receive(on: RunLoop.main)
+                .sink(receiveValue: { [weak self] _ in
+                    self?.ping()
+                })
+            }
+        }
+
+        private func stopKeepAlive() {
+            keepAliveCancellable?.cancel()
+            keepAliveCancellable = nil
+        }
+    }
+
+    // MARK: - Message Methods
+    public extension WSSClient {
+
+        /// Connect the websocket
+        func connect() {
+            guard !state.isConnected else {
+                return
+            }
+            task.resume()
+            listen()
+            configureKeepAliveTimer()
+        }
+
+        /// Disconnect from the websocket
+        func disconnect(code: URLSessionWebSocketTask.CloseCode = .normalClosure, reason: Data? = nil) {
+            guard state.isConnected else {
+                return
+            }
+            task.cancel(with: code, reason: reason)
+            stopKeepAlive()
+        }
+
+        /// Wait for the next full message
+        private func listen() {
+            let listenTask = Task { @MainActor [weak self] in
+                guard let self else {
+                    return
+                }
+                do {
+                    try await self.listenForMessage()
+                    self.listen()
+                } catch {
+                    self.event.send(.failure(error))
+                }
+            }
+            listenCancellable = AnyCancellable {
+                listenTask.cancel()
+            }
+        }
+
+        private func listenForMessage() async throws {
+            let message = try await task.receive()
+            try Task.checkCancellation()
+            switch message {
+                case let .string(text):
+                    event.send(.textMessageReceived(text))
+                case let .data(binary):
+                    event.send(.binaryMessageReceived(binary))
+                @unknown default:
+                    event.send(.unsupportedMessageReceived)
+            }
+        }
+    }
+
+    // MARK: - Message Methods
+    public extension WSSClient {
+
+        /// Send a ping
+        func ping() {
+            guard state.isConnected else {
+                return
+            }
+
+            task.sendPing(pongReceiveHandler: { [weak self] error in
+                Task { @MainActor [weak self] in
+                    if let error {
+                        self?.event.send(.pingFailed(error))
+                    } else {
+                        self?.event.send(.pingSent)
+                    }
+                }
+            })
+        }
+
+        /// Send string data on the websocket
+        /// - parameter uuid: The UUID for this message. More for debugging than actual function
+        /// - parameter text: The text to send
+        func send(uuid: UUID = .init(), text: String) {
+            guard state.isConnected else {
+                return
+            }
+
+            task.send(.string(text), completionHandler: { [weak self] error in
+                Task { @MainActor [weak self] in
+                    if let error {
+                        self?.event.send(.messageFailed(uuid, error))
+                    } else {
+                        self?.event.send(.messageSent(uuid))
+                    }
+                }
+            })
+        }
+
+        /// Send binary data on the websocket
+        /// - parameter uuid: The UUID for this message. More for debugging than actual function
+        /// - parameter binary: The binary data to send
+        func send(uuid: UUID = .init(), binary: Data) {
+            guard state.isConnected else {
+                return
+            }
+
+            task.send(.data(binary), completionHandler: { [weak self] error in
+                Task { @MainActor [weak self] in
+                    if let error {
+                        self?.event.send(.messageFailed(uuid, error))
+                    } else {
+                        self?.event.send(.messageSent(uuid))
+                    }
+                }
+            })
+        }
+    }
+
+    // MARK: - URLSessionDelegate
+    extension WSSClient: URLSessionWebSocketDelegate {
+
+        public nonisolated func urlSession(
+            _: URLSession,
+            webSocketTask _: URLSessionWebSocketTask,
+            didOpenWithProtocol _: String?
+        ) {
+            Task { @MainActor [weak self] in
+                self?.state = .connected
+                self?.event.send(.connected)
+            }
+        }
+
+        public nonisolated func urlSession(
+            _: URLSession,
+            webSocketTask _: URLSessionWebSocketTask,
+            didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+            reason _: Data?
+        ) {
+            Task { @MainActor [weak self] in
+                self?.state = .disconnected(closeCode)
+                self?.event.send(.disconnected(closeCode))
+                self?.stopKeepAlive()
+                self?.stopListening()
+            }
+        }
+    }
+
+#endif

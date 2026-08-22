@@ -1,0 +1,10 @@
+{
+  "name": "roundtrip-website",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check-internal-links.mjs dist"
+  }
+}
