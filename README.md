@@ -8,11 +8,14 @@ RoundTrip supports iOS 18, macOS 15, tvOS 18, watchOS 11, and visionOS 2. Linux 
 
 ## Install
 
-The package has no published remote or release tag yet. For local development, add the checkout by path:
+Add RoundTrip to a Swift Package Manager manifest:
 
 ```swift
 dependencies: [
-    .package(path: "../roundtrip-swift")
+    .package(
+        url: "https://github.com/modern-swift-dev/roundtrip-swift.git",
+        from: "1.0.0"
+    )
 ]
 ```
 
@@ -23,10 +26,10 @@ Add one or both products to the target that uses them:
 .product(name: "RoundTripREST", package: "roundtrip-swift")
 ```
 
-Replace the following placeholders after a remote and first release tag exist:
+For local development against a checkout, use a path dependency instead:
 
 ```swift
-// .package(url: "<ROUNDTRIP-REPOSITORY-URL>", from: "<ROUNDTRIP-FIRST-RELEASE>")
+.package(path: "../roundtrip-swift")
 ```
 
 ## Async request
@@ -96,7 +99,7 @@ print(result.value.name)
 
 ## Documentation
 
-Build DocC locally to browse the guides included with the `RoundTrip` and `RoundTripREST` products. The package has no hosted documentation URL yet.
+Read the [RoundTrip documentation](https://modern-swift-dev.github.io/roundtrip-swift/) on GitHub Pages. The site includes guides and API references for `RoundTrip` and `RoundTripREST`, and is regenerated for each release.
 
 ## Contributing
 
