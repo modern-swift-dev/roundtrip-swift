@@ -58,33 +58,42 @@
 
         /// The Download Task Subscription
         ///
-        /// Thread safety: immutable request data is Sendable, while a mutex protects task creation
-        /// and cancellation. The unchecked conformance covers Combine's reference-type protocol.
+        /// Thread safety: immutable request data is Sendable. A mutex protects state, and a recursive
+        /// delivery lock serializes downstream calls with cancellation. The unchecked conformance
+        /// covers Combine's reference-type protocol.
         class DownloadTaskSubscription<SubscriberType: Subscriber & Sendable>: Subscription, @unchecked Sendable where
             SubscriberType.Input == (url: URL, response: URLResponse),
             SubscriberType.Failure == any Error {
 
-            private let subscriber: SubscriberType
             private let destination: URL
             private let session: URLSession
             private let request: URLRequest
-            private struct State {
-                var task: URLSessionDownloadTask?
-                var started = false
+            private enum Phase: Equatable {
+                case awaitingDemand
+                case active
+                case deliveringValue
+                case terminated
             }
 
-            private let state = Mutex(State())
+            private struct State {
+                var subscriber: SubscriberType?
+                var task: URLSessionDownloadTask?
+                var phase = Phase.awaitingDemand
+            }
+
+            private let state: Mutex<State>
+            private let deliveryLock = NSRecursiveLock()
             private let progress: Progress?
             private let pendingUnitCount: Int64
             public let combineIdentifier = CombineIdentifier()
 
             init(subscriber: SubscriberType, session: URLSession, request: URLRequest, destination: URL, progress: Progress? = nil, pendingUnitCount: Int64 = 1) {
-                self.subscriber = subscriber
                 self.session = session
                 self.request = request
                 self.destination = destination
                 self.progress = progress
                 self.pendingUnitCount = pendingUnitCount
+                state = Mutex(State(subscriber: subscriber))
             }
 
             public func request(_ demand: Subscribers.Demand) {
@@ -92,35 +101,34 @@
                     return
                 }
                 let task = state.withLock { state -> URLSessionDownloadTask? in
-                    guard !state.started else {
+                    guard state.phase == .awaitingDemand else {
                         return nil
                     }
-                    state.started = true
+                    state.phase = .active
                     let task = session.downloadTask(with: request) { [weak self] tempFileURL, response, error in
                         guard let self else {
                             return
                         }
                         if let error {
-                            self.subscriber.receive(completion: .failure(error))
+                            self.deliverFailure(error)
                             return
                         }
 
                         guard let response else {
-                            self.subscriber.receive(completion: .failure(URLError(.badServerResponse)))
+                            self.deliverFailure(URLError(.badServerResponse))
                             return
                         }
 
                         guard let tempFileURL else {
-                            self.subscriber.receive(completion: .failure(URLError(.fileDoesNotExist)))
+                            self.deliverFailure(URLError(.fileDoesNotExist))
                             return
                         }
 
                         do {
                             try FileManager.default.moveItem(at: tempFileURL, to: self.destination)
-                            _ = self.subscriber.receive((url: self.destination, response: response))
-                            self.subscriber.receive(completion: .finished)
+                            self.deliver(url: self.destination, response: response)
                         } catch {
-                            self.subscriber.receive(completion: .failure(error))
+                            self.deliverFailure(error)
                         }
                     }
                     state.task = task
@@ -134,7 +142,75 @@
             }
 
             public func cancel() {
-                state.withLock { $0.task }?.cancel()
+                deliveryLock.lock()
+                let task = state.withLock { state -> URLSessionDownloadTask? in
+                    guard state.phase != .terminated else {
+                        return nil
+                    }
+                    state.phase = .terminated
+                    state.subscriber = nil
+                    let task = state.task
+                    state.task = nil
+                    return task
+                }
+                deliveryLock.unlock()
+                task?.cancel()
+            }
+
+            private func deliver(url: URL, response: URLResponse) {
+                deliveryLock.lock()
+                defer {
+                    deliveryLock.unlock()
+                }
+                guard let subscriber = beginValueDelivery() else {
+                    return
+                }
+                _ = subscriber.receive((url: url, response: response))
+                takeSubscriberForFinishedDelivery()?.receive(completion: .finished)
+            }
+
+            private func deliverFailure(_ error: any Error) {
+                deliveryLock.lock()
+                defer {
+                    deliveryLock.unlock()
+                }
+                takeSubscriberForTerminalDelivery()?.receive(completion: .failure(error))
+            }
+
+            private func takeSubscriberForTerminalDelivery() -> SubscriberType? {
+                state.withLock { state in
+                    guard state.phase == .active else {
+                        return nil
+                    }
+                    state.phase = .terminated
+                    state.task = nil
+                    let subscriber = state.subscriber
+                    state.subscriber = nil
+                    return subscriber
+                }
+            }
+
+            private func beginValueDelivery() -> SubscriberType? {
+                state.withLock { state in
+                    guard state.phase == .active else {
+                        return nil
+                    }
+                    state.phase = .deliveringValue
+                    return state.subscriber
+                }
+            }
+
+            private func takeSubscriberForFinishedDelivery() -> SubscriberType? {
+                state.withLock { state in
+                    guard state.phase == .deliveringValue else {
+                        return nil
+                    }
+                    state.phase = .terminated
+                    state.task = nil
+                    let subscriber = state.subscriber
+                    state.subscriber = nil
+                    return subscriber
+                }
             }
         }
     }

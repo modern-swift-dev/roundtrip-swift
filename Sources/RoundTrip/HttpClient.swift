@@ -158,42 +158,48 @@ public final class HttpClient: Sendable {
     public func download(request: any URLRequestConvertible, to destination: URL, progress: Progress? = nil) async throws -> ApiResponse {
 
         let request = try request.buildRequest(baseUrl: nil, encoder: RoundTripSupport.makeJSONEncoder())
-        let rawResponse: (URL, URLResponse) = try await withCheckedThrowingContinuation { continuation in
-            let task = currentSession().downloadTask(with: request, completionHandler: { url, response, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                guard let url else {
-                    continuation.resume(throwing: URLError(.badServerResponse))
-                    return
-                }
-
-                guard let response = response as? HTTPURLResponse else {
-                    continuation.resume(throwing: URLError(.badServerResponse))
-                    return
-                }
-
-                guard (200 ..< 300).contains(response.statusCode) else {
-                    continuation.resume(throwing: ApiError.invalidStatusCode(response.statusCode))
-                    return
-                }
-
-                do {
-                    try FileManager.default.moveItem(at: url, to: destination)
-                    continuation.resume(returning: (destination, response))
-                } catch {
-                    do {
-                        try FileManager.default.removeItem(at: url)
-                    } catch {
-                        RoundTripSupport.log(error)
+        let taskReference = URLSessionTaskReference()
+        let rawResponse: (URL, URLResponse) = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = currentSession().downloadTask(with: request, completionHandler: { url, response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
                     }
-                    continuation.resume(throwing: error)
-                }
-            })
-            progress?.addChild(task.progress, withPendingUnitCount: NSURLSessionTransferSizeUnknown)
-            task.resume()
+
+                    guard let url else {
+                        continuation.resume(throwing: URLError(.badServerResponse))
+                        return
+                    }
+
+                    guard let response = response as? HTTPURLResponse else {
+                        continuation.resume(throwing: URLError(.badServerResponse))
+                        return
+                    }
+
+                    guard (200 ..< 300).contains(response.statusCode) else {
+                        continuation.resume(throwing: ApiError.invalidStatusCode(response.statusCode))
+                        return
+                    }
+
+                    do {
+                        try FileManager.default.moveItem(at: url, to: destination)
+                        continuation.resume(returning: (destination, response))
+                    } catch {
+                        do {
+                            try FileManager.default.removeItem(at: url)
+                        } catch {
+                            RoundTripSupport.log(error)
+                        }
+                        continuation.resume(throwing: error)
+                    }
+                })
+                taskReference.store(task)
+                progress?.addChild(task.progress, withPendingUnitCount: NSURLSessionTransferSizeUnknown)
+                task.resume()
+            }
+        } onCancel: {
+            taskReference.cancel()
         }
         return ApiResponse(file: destination, response: rawResponse.1)
     }
@@ -206,27 +212,33 @@ public final class HttpClient: Sendable {
     /// - throws: An error if request construction or transfer fails.
     public func upload(request: any URLRequestConvertible, data: Data, progress: Progress? = nil) async throws -> ApiResponse {
         let request = try request.buildRequest(baseUrl: nil, encoder: RoundTripSupport.makeJSONEncoder())
-        let rawResponse: (Data, URLResponse) = try await withCheckedThrowingContinuation { continuation in
-            let task = currentSession().uploadTask(with: request, from: data, completionHandler: { data, response, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
+        let taskReference = URLSessionTaskReference()
+        let rawResponse: (Data, URLResponse) = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = currentSession().uploadTask(with: request, from: data, completionHandler: { data, response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    if let data, let response {
+                        continuation.resume(returning: (data, response))
+                        return
+                    }
+
+                    continuation.resume(throwing: URLError(.unknown))
+                })
+
+                taskReference.store(task)
+                if let progress {
+                    progress.totalUnitCount += Int64(data.count)
+                    progress.addChild(task.progress, withPendingUnitCount: Int64(data.count))
                 }
 
-                if let data, let response {
-                    continuation.resume(returning: (data, response))
-                    return
-                }
-
-                continuation.resume(throwing: URLError(.unknown))
-            })
-
-            if let progress {
-                progress.totalUnitCount += Int64(data.count)
-                progress.addChild(task.progress, withPendingUnitCount: Int64(data.count))
+                task.resume()
             }
-
-            task.resume()
+        } onCancel: {
+            taskReference.cancel()
         }
 
         return ApiResponse(data: rawResponse.0, response: rawResponse.1)
@@ -249,27 +261,33 @@ public final class HttpClient: Sendable {
         let request = try request.buildRequest(baseUrl: nil, encoder: RoundTripSupport.makeJSONEncoder())
         let converted = requestBody.apply(request)
         let source = requestBody.url
-        let rawResponse: (Data, URLResponse) = try await withCheckedThrowingContinuation { continuation in
-            let task = currentSession().uploadTask(with: converted, fromFile: source, completionHandler: { data, response, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
+        let taskReference = URLSessionTaskReference()
+        let rawResponse: (Data, URLResponse) = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = currentSession().uploadTask(with: converted, fromFile: source, completionHandler: { data, response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    if let data, let response {
+                        continuation.resume(returning: (data, response))
+                        return
+                    }
+
+                    continuation.resume(throwing: URLError(.unknown))
+                })
+
+                taskReference.store(task)
+                if let progress, let size = RoundTripSupport.fileSize(at: source) {
+                    progress.totalUnitCount += size
+                    progress.addChild(task.progress, withPendingUnitCount: size)
                 }
 
-                if let data, let response {
-                    continuation.resume(returning: (data, response))
-                    return
-                }
-
-                continuation.resume(throwing: URLError(.unknown))
-            })
-
-            if let progress, let size = RoundTripSupport.fileSize(at: source) {
-                progress.totalUnitCount += size
-                progress.addChild(task.progress, withPendingUnitCount: size)
+                task.resume()
             }
-
-            task.resume()
+        } onCancel: {
+            taskReference.cancel()
         }
 
         return ApiResponse(data: rawResponse.0, response: rawResponse.1)
@@ -283,27 +301,33 @@ public final class HttpClient: Sendable {
     /// - throws: An error if request construction or transfer fails.
     public func fileUpload(request: any URLRequestConvertible, from source: URL, progress: Progress? = nil) async throws -> ApiResponse {
         let request = try request.buildRequest(baseUrl: nil, encoder: RoundTripSupport.makeJSONEncoder())
-        let rawResponse: (Data, URLResponse) = try await withCheckedThrowingContinuation { continuation in
-            let task = currentSession().uploadTask(with: request, fromFile: source, completionHandler: { data, response, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
+        let taskReference = URLSessionTaskReference()
+        let rawResponse: (Data, URLResponse) = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = currentSession().uploadTask(with: request, fromFile: source, completionHandler: { data, response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    if let data, let response {
+                        continuation.resume(returning: (data, response))
+                        return
+                    }
+
+                    continuation.resume(throwing: URLError(.unknown))
+                })
+
+                taskReference.store(task)
+                if let progress, let size = RoundTripSupport.fileSize(at: source) {
+                    progress.totalUnitCount += size
+                    progress.addChild(task.progress, withPendingUnitCount: size)
                 }
 
-                if let data, let response {
-                    continuation.resume(returning: (data, response))
-                    return
-                }
-
-                continuation.resume(throwing: URLError(.unknown))
-            })
-
-            if let progress, let size = RoundTripSupport.fileSize(at: source) {
-                progress.totalUnitCount += size
-                progress.addChild(task.progress, withPendingUnitCount: size)
+                task.resume()
             }
-
-            task.resume()
+        } onCancel: {
+            taskReference.cancel()
         }
 
         return ApiResponse(data: rawResponse.0, response: rawResponse.1)
@@ -323,6 +347,33 @@ public final class HttpClient: Sendable {
                 )
             }
         }
+    }
+}
+
+/// Access to the task reference is protected by the lock. Cancellation can race
+/// with URLSession task creation without exposing the mutable reference.
+private final class URLSessionTaskReference: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: URLSessionTask?
+    private var isCancelled = false
+
+    func store(_ task: URLSessionTask) {
+        lock.lock()
+        self.task = task
+        let shouldCancel = isCancelled
+        lock.unlock()
+
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        isCancelled = true
+        let task = task
+        lock.unlock()
+        task?.cancel()
     }
 }
 

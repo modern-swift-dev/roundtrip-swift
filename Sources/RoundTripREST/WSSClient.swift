@@ -170,11 +170,13 @@
             code: URLSessionWebSocketTask.CloseCode = .normalClosure,
             reason: Data? = nil
         ) {
-            guard state.isConnected else {
-                return
+            if state.isConnected {
+                task.cancel(with: code, reason: reason)
+            } else {
+                task.cancel()
             }
-            task.cancel(with: code, reason: reason)
             stopKeepAlive()
+            stopListening()
         }
 
         private func listen() {
@@ -188,6 +190,10 @@
                     do {
                         try await listenForMessage()
                     } catch is CancellationError {
+                        break
+                    } catch let error as URLError where error.code == .cancelled {
+                        break
+                    } catch where Task.isCancelled {
                         break
                     } catch {
                         Self.log(error)

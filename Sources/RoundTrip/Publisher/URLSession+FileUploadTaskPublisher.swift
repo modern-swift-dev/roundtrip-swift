@@ -53,31 +53,40 @@
 
         /// The Upload Task Subscription
         ///
-        /// Thread safety: immutable request data is Sendable, while a mutex protects task creation
-        /// and cancellation. The unchecked conformance covers Combine's reference-type protocol.
+        /// Thread safety: immutable request data is Sendable. A mutex protects state, and a recursive
+        /// delivery lock serializes downstream calls with cancellation. The unchecked conformance
+        /// covers Combine's reference-type protocol.
         class FileUploadTaskSubscription<SubscriberType: Subscriber & Sendable>: Subscription, @unchecked Sendable where
             SubscriberType.Input == (data: Data?, response: URLResponse),
             SubscriberType.Failure == any Error {
 
-            private let subscriber: SubscriberType
             private let file: URL
             private let session: URLSession
             private let request: URLRequest
-            private struct State {
-                var task: URLSessionUploadTask?
-                var started = false
+            private enum Phase: Equatable {
+                case awaitingDemand
+                case active
+                case deliveringValue
+                case terminated
             }
 
-            private let state = Mutex(State())
+            private struct State {
+                var subscriber: SubscriberType?
+                var task: URLSessionUploadTask?
+                var phase = Phase.awaitingDemand
+            }
+
+            private let state: Mutex<State>
+            private let deliveryLock = NSRecursiveLock()
             private let progress: Progress?
             public let combineIdentifier = CombineIdentifier()
 
             init(subscriber: SubscriberType, session: URLSession, request: URLRequest, file: URL, progress: Progress? = nil) {
-                self.subscriber = subscriber
                 self.session = session
                 self.request = request
                 self.file = file
                 self.progress = progress
+                state = Mutex(State(subscriber: subscriber))
             }
 
             public func request(_ demand: Subscribers.Demand) {
@@ -85,26 +94,25 @@
                     return
                 }
                 let task = state.withLock { state -> URLSessionUploadTask? in
-                    guard !state.started else {
+                    guard state.phase == .awaitingDemand else {
                         return nil
                     }
-                    state.started = true
+                    state.phase = .active
                     let task = session.uploadTask(with: request, fromFile: file) { [weak self] data, response, error in
                         guard let self else {
                             return
                         }
                         if let error {
-                            self.subscriber.receive(completion: .failure(error))
+                            self.deliverFailure(error)
                             return
                         }
 
                         guard let response else {
-                            self.subscriber.receive(completion: .failure(URLError(.badServerResponse)))
+                            self.deliverFailure(URLError(.badServerResponse))
                             return
                         }
 
-                        _ = self.subscriber.receive((data: data, response: response))
-                        self.subscriber.receive(completion: .finished)
+                        self.deliver(data: data, response: response)
                     }
                     state.task = task
                     return task
@@ -120,7 +128,75 @@
             }
 
             public func cancel() {
-                state.withLock { $0.task }?.cancel()
+                deliveryLock.lock()
+                let task = state.withLock { state -> URLSessionUploadTask? in
+                    guard state.phase != .terminated else {
+                        return nil
+                    }
+                    state.phase = .terminated
+                    state.subscriber = nil
+                    let task = state.task
+                    state.task = nil
+                    return task
+                }
+                deliveryLock.unlock()
+                task?.cancel()
+            }
+
+            private func deliver(data: Data?, response: URLResponse) {
+                deliveryLock.lock()
+                defer {
+                    deliveryLock.unlock()
+                }
+                guard let subscriber = beginValueDelivery() else {
+                    return
+                }
+                _ = subscriber.receive((data: data, response: response))
+                takeSubscriberForFinishedDelivery()?.receive(completion: .finished)
+            }
+
+            private func deliverFailure(_ error: any Error) {
+                deliveryLock.lock()
+                defer {
+                    deliveryLock.unlock()
+                }
+                takeSubscriberForTerminalDelivery()?.receive(completion: .failure(error))
+            }
+
+            private func takeSubscriberForTerminalDelivery() -> SubscriberType? {
+                state.withLock { state in
+                    guard state.phase == .active else {
+                        return nil
+                    }
+                    state.phase = .terminated
+                    state.task = nil
+                    let subscriber = state.subscriber
+                    state.subscriber = nil
+                    return subscriber
+                }
+            }
+
+            private func beginValueDelivery() -> SubscriberType? {
+                state.withLock { state in
+                    guard state.phase == .active else {
+                        return nil
+                    }
+                    state.phase = .deliveringValue
+                    return state.subscriber
+                }
+            }
+
+            private func takeSubscriberForFinishedDelivery() -> SubscriberType? {
+                state.withLock { state in
+                    guard state.phase == .deliveringValue else {
+                        return nil
+                    }
+                    state.phase = .terminated
+                    state.task = nil
+                    let subscriber = state.subscriber
+                    state.subscriber = nil
+                    return subscriber
+                }
             }
         }
     }

@@ -6,7 +6,7 @@
         import FoundationNetworking
     #endif
 
-    /// A WebSocket client implementation supporting automatic reconnection and keep-alive.
+    /// A WebSocket client implementation supporting explicit connection control and keep-alive.
     /// Provides a Combine-based interface for WebSocket events.
     ///
     /// Example:
@@ -116,7 +116,6 @@
             keepAliveConfig = keepAlive
             super.init()
             task.delegate = self
-            configureKeepAliveTimer()
         }
 
         private func stopListening() {
@@ -138,6 +137,7 @@
                     on: RunLoop.main,
                     in: .default
                 )
+                .autoconnect()
                 .receive(on: RunLoop.main)
                 .sink(receiveValue: { [weak self] _ in
                     self?.ping()
@@ -161,16 +161,17 @@
             }
             task.resume()
             listen()
-            configureKeepAliveTimer()
         }
 
         /// Disconnect from the websocket
         func disconnect(code: URLSessionWebSocketTask.CloseCode = .normalClosure, reason: Data? = nil) {
-            guard state.isConnected else {
-                return
+            if state.isConnected {
+                task.cancel(with: code, reason: reason)
+            } else {
+                task.cancel()
             }
-            task.cancel(with: code, reason: reason)
             stopKeepAlive()
+            stopListening()
         }
 
         /// Wait for the next full message
@@ -182,6 +183,12 @@
                 do {
                     try await self.listenForMessage()
                     self.listen()
+                } catch is CancellationError {
+                    return
+                } catch let error as URLError where error.code == .cancelled {
+                    return
+                } catch where Task.isCancelled {
+                    return
                 } catch {
                     self.event.send(.failure(error))
                 }
@@ -275,6 +282,7 @@
             Task { @MainActor [weak self] in
                 self?.state = .connected
                 self?.event.send(.connected)
+                self?.configureKeepAliveTimer()
             }
         }
 
