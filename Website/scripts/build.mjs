@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const websiteDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDirectory = resolve(websiteDirectory, "dist");
 const publicDirectory = resolve(websiteDirectory, "public");
-const basePath = (process.env.SITE_BASE_PATH ?? "").replace(/\/$/, "");
+const basePath = (process.env.SITE_BASE_PATH ?? "/roundtrip-swift").replace(/\/$/, "");
 
 function path(pathname) {
     return `${basePath}${pathname}`;

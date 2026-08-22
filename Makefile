@@ -5,6 +5,9 @@ IOS_DESTINATION ?= platform=iOS Simulator,name=iPhone 17 Pro,OS=latest
 TVOS_DESTINATION ?= platform=tvOS Simulator,name=Apple TV 4K (3rd generation),OS=latest
 WATCHOS_DESTINATION ?= platform=watchOS Simulator,name=Apple Watch Series 11 (46mm),OS=latest
 VISIONOS_DESTINATION ?= platform=visionOS Simulator,name=Apple Vision Pro,OS=latest
+SITE_BASE_PATH ?= /roundtrip-swift
+
+export SITE_BASE_PATH
 
 .PHONY: setup format-check format lint tests documentation documentation-static static-docs site site-setup site-preview internal-link examples \
 	apple macos ios tvos watchos visionos

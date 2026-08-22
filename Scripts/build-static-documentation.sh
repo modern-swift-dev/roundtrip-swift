@@ -4,6 +4,9 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_directory="$repository_root/.build/site"
+site_base_path="${SITE_BASE_PATH-/roundtrip-swift}"
+site_base_path="${site_base_path#/}"
+site_base_path="${site_base_path%/}"
 
 usage() {
     echo "Usage: $0 [--output-directory DIRECTORY]" >&2
@@ -44,7 +47,7 @@ for module in "${modules[@]}"; do
         --target "$target" \
         --output-path "$destination" \
         --transform-for-static-hosting \
-        --hosting-base-path "api/$route_name"
+        --hosting-base-path "$site_base_path/api/$route_name"
 done
 
 echo "Created static DocC sites in $output_directory/api"

@@ -2,7 +2,7 @@ import { access, readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
 const outputDirectory = resolve(process.argv[2] ?? "dist");
-const hostingBasePath = (process.env.SITE_BASE_PATH ?? "").replace(/\/$/, "");
+const hostingBasePath = (process.env.SITE_BASE_PATH ?? "/roundtrip-swift").replace(/\/$/, "");
 const attributePattern = /\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
 const htmlFiles = [];
 const failures = [];
