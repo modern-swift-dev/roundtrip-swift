@@ -3,13 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="RoundTrip package examples.">
+  <meta name="description" content="Compiled RoundTrip request and REST client examples.">
   <title>RoundTrip examples</title>
   <link rel="stylesheet" href="/roundtrip-swift/styles.css">
 </head>
 <body>
   <header><nav><a href="/roundtrip-swift/">RoundTrip</a><a href="/roundtrip-swift/documentation/">Documentation</a><a href="/roundtrip-swift/examples/">Examples</a></nav></header>
-  <main><section><p class="eyebrow">Examples</p><h1>Examples</h1><p>Run the checked-in examples with:</p><pre><code>swift test --package-path Examples</code></pre><p>The examples use the local package checkout.</p></section></main>
+  <main><section><p class="eyebrow">Examples</p><h1>Compiled examples from the repository</h1><p>The <code>Examples</code> package uses the local checkout, so its source is checked against the current API.</p><h2>Run without network access</h2><pre><code>swift run --package-path Examples BasicUsage
+swift test --package-path Examples</code></pre><p>The executable constructs a GET request for <code>https://example.com?source=basic-usage</code> and prepares the same request with <code>RestClient</code>. It sends nothing unless you pass <code>--execute</code>.</p><h2>Build a request</h2><pre><code>let request = builder
+    .setMethod(.get)
+    .addHeader(.accept(.json))
+    .addQueryParam(name: "source", value: "basic-usage")
+    .build()</code></pre><h2>Configure a REST client</h2><pre><code>let restClient = RestClient(
+    baseURLProvider: ExampleBaseURLProvider(),
+    apiKeyProvider: ExampleAPIKeyProvider(),
+    service: NetworkService(),
+    headerProvider: nil,
+    errorSubject: PassthroughSubject&lt;ApiError, Never&gt;()
+)</code></pre><p><a href="https://github.com/modern-swift-dev/roundtrip-swift/tree/main/Examples">Open the complete example source</a>.</p></section></main>
   <footer>RoundTrip supports macOS 15, iOS 18, tvOS 18, watchOS 11, and visionOS 2.</footer>
 </body>
 </html>

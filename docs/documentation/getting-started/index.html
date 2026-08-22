@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Install RoundTrip and send HTTP or REST requests.">
+  <title>Getting started with RoundTrip</title>
+  <link rel="stylesheet" href="/roundtrip-swift/styles.css">
+</head>
+<body>
+  <header><nav><a href="/roundtrip-swift/">RoundTrip</a><a href="/roundtrip-swift/documentation/">Documentation</a><a href="/roundtrip-swift/examples/">Examples</a></nav></header>
+  <main><section><p class="eyebrow">Getting started</p><h1>Build and send a request</h1><h2>Install the package</h2><pre><code>dependencies: [
+    .package(
+        url: "https://github.com/modern-swift-dev/roundtrip-swift.git",
+        from: "1.0.0"
+    )
+]</code></pre><p>Add <code>RoundTrip</code> for direct HTTP operations. Add <code>RoundTripREST</code> when requests share a base URL and client configuration.</p><pre><code>.product(name: "RoundTrip", package: "roundtrip-swift"),
+.product(name: "RoundTripREST", package: "roundtrip-swift")</code></pre><h2>Construct a request</h2><pre><code>let request = URLRequestBuilder(string: "https://example.com/users/42")!
+    .setMethod(.get)
+    .addHeader(.accept(.json))</code></pre><h2>Execute and decode</h2><pre><code>let response = try await HttpClient().execute(request: request)
+try response.checkForStatusCodeValidity(validStatusCode: [200])
+
+guard let user = response.payloadAs(User.self) else {
+    throw ApiError.responseDecodingFailed(
+        response.data,
+        ApiError.emptyResponseBody
+    )
+}</code></pre><p>Continue with the <a href="/roundtrip-swift/examples/">examples</a> for query parameters and REST client configuration, or open the <a href="/roundtrip-swift/documentation/">DocC references</a> for every public symbol.</p></section></main>
+  <footer>RoundTrip supports macOS 15, iOS 18, tvOS 18, watchOS 11, and visionOS 2.</footer>
+</body>
+</html>
