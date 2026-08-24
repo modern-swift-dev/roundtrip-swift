@@ -140,6 +140,66 @@
             await #expect(throws: ApiError.self) { let _: ApiOperationResult<RESTResponse> = try await restClient.execute(request: RESTRequest(path: "users")) }
         }
 
+        @Test func invalidStatusPreservesResponseForExecuteUploadAndMultipart() async throws {
+            let body = Data("error body".utf8)
+            let headers: [String: any Sendable] = ["X-Request-ID": "request-123"]
+            let response = ApiResponse(status: 422, data: body, headers: headers)
+            let service = RESTStubNetworkService()
+            service.executeResponse = response
+            service.uploadResponse = response
+            service.multipartResponse = response
+            let restClient = client(service: service)
+
+            do {
+                _ = try await restClient.execute(request: RESTRequest(path: "users"), validStatusCode: [200])
+                Issue.record("Execute should have thrown")
+            } catch let error as ApiError {
+                assertInvalidStatus(error, response: response)
+            }
+
+            let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("roundtrip-invalid-status-upload-\(UUID()).txt")
+            try Data("upload".utf8).write(to: fileURL)
+            defer { try? FileManager.default.removeItem(at: fileURL) }
+
+            do {
+                let _: ApiOperationResult<RESTResponse> = try await restClient.upload(
+                    request: RESTRequest(path: "upload", method: "POST"),
+                    fileUrl: fileURL,
+                    validStatusCode: [200]
+                )
+                Issue.record("Upload should have thrown")
+            } catch let error as ApiError {
+                assertInvalidStatus(error, response: response)
+            }
+
+            let optionalBuilder = try MultipartBody.Builder()
+            let builder = try #require(optionalBuilder)
+            builder.addPart(name: "field", part: .init(name: "field", text: "value"))
+            let multipartBody = try builder.build()
+            defer { multipartBody.cleanup() }
+
+            do {
+                let _: ApiOperationResult<RESTResponse> = try await restClient.postMultipart(
+                    request: RESTMultipartRequest(body: multipartBody, error: nil),
+                    validStatusCode: [200]
+                )
+                Issue.record("Multipart upload should have thrown")
+            } catch let error as ApiError {
+                assertInvalidStatus(error, response: response)
+            }
+        }
+
+        private func assertInvalidStatus(_ error: ApiError, response: ApiResponse, sourceLocation: SourceLocation = #_sourceLocation) {
+            guard case let .invalidStatusCode(statusCode, actualResponse) = error else {
+                Issue.record("Expected invalid status code error", sourceLocation: sourceLocation)
+                return
+            }
+            #expect(statusCode == response.statusCode, sourceLocation: sourceLocation)
+            #expect(actualResponse?.statusCode == response.statusCode, sourceLocation: sourceLocation)
+            #expect(actualResponse?.data == response.data, sourceLocation: sourceLocation)
+            #expect(actualResponse?.headers["X-Request-ID"] as? String == "request-123", sourceLocation: sourceLocation)
+        }
+
         @Test func exposesAndRequiresAPIKey() async throws {
             let restClient = client(apiKey: "key")
             let apiKey = await restClient.apiKey()

@@ -191,8 +191,9 @@ import Testing
             try response.checkForStatusCodeValidity(validStatusCode: [200, 201])
             Issue.record("Should have thrown")
         } catch let error as ApiError {
-            if case let .invalidStatusCode(code, _) = error {
+            if case let .invalidStatusCode(code, response) = error {
                 #expect(code == 404)
+                #expect(response?.statusCode == 404)
             } else {
                 Issue.record("Wrong error type")
             }

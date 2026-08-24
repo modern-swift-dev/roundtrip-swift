@@ -155,7 +155,7 @@ public struct ApiResponse: Sendable {
 
     public func checkForStatusCodeValidity(validStatusCode: [Int]) throws {
         if !validStatusCode.contains(statusCode) {
-            throw ApiError.invalidStatusCode(statusCode)
+            throw ApiError.invalidStatusCode(statusCode, self)
         }
     }
 }
