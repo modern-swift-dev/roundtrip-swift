@@ -66,6 +66,9 @@ public extension [URLRequestBuilder.FormParameter] {
         }
         var components = URLComponents()
         components.queryItems = toItems()
-        return components.percentEncodedQuery?.data(using: .utf8)
+        // Form decoders interpret a literal plus sign as a space.
+        return components.percentEncodedQuery?
+            .replacingOccurrences(of: "+", with: "%2B")
+            .data(using: .utf8)
     }
 }

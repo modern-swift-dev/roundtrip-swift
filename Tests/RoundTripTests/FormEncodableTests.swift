@@ -180,6 +180,25 @@ import Testing
         #expect(bodyString.contains("key2=value2"))
     }
 
+    @Test func formParametersPreservePlusSignsAndReservedCharacters() throws {
+        let name = "email+label &=%"
+        let value = "a+b@example.com &=% é"
+        let params: [URLRequestBuilder.FormParameter] = [.init(name: name, value: value)]
+        let body = try #require(params.toBody())
+        let encoded = try #require(String(data: body, encoding: .utf8))
+        #expect(!encoded.contains("+"))
+        #expect(encoded.contains("%2B"))
+
+        let fields = encoded.split(separator: "&")
+        #expect(fields.count == 1)
+        let pair = try #require(fields.first).split(separator: "=", omittingEmptySubsequences: false)
+        #expect(pair.count == 2)
+        let decoded = pair.map {
+            String($0).replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+        }
+        #expect(decoded == [name, value])
+    }
+
     @Test func emptyFormParametersToBody() {
         let params: [URLRequestBuilder.FormParameter] = []
         let body = params.toBody()
