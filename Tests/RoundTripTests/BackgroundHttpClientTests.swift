@@ -3,10 +3,19 @@
     #if canImport(FoundationNetworking)
         import FoundationNetworking
     #endif
-    @testable import RoundTrip
+    import RoundTrip
     import Testing
 
     @MainActor @Suite(.serialized) struct BackgroundHttpClientTests {
+
+        @Test func downloadCompletionIsExposedToObjectiveCDelegateDispatch() {
+            #expect(BackgroundHttpClient.instancesRespond(
+                to: #selector(URLSessionDownloadDelegate.urlSession(_:downloadTask:didFinishDownloadingTo:))
+            ))
+            #expect(BackgroundHttpClient.instancesRespond(
+                to: #selector(URLSessionTaskDelegate.urlSession(_:task:didFinishCollecting:))
+            ))
+        }
 
         @Test func initStoresInitialPublishedStateAndCompletionHandlerCanRun() {
             let client = BackgroundHttpClient(

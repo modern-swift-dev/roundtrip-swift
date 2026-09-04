@@ -156,10 +156,10 @@
         }
     }
 
-    // MARK: - URLSessionDelegate
-    extension BackgroundHttpClient: URLSessionDelegate {
+    // MARK: - URLSessionDownloadDelegate
+    extension BackgroundHttpClient: URLSessionDownloadDelegate {
 
-        func urlSession(
+        public func urlSession(
             _ session: URLSession,
             downloadTask: URLSessionDownloadTask,
             didFinishDownloadingTo location: URL
