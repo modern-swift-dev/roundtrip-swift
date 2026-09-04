@@ -23,7 +23,7 @@ public class URLRequestBuilder {
     /// The http Method
     var method: Method = .get
 
-    /// The http body. Used only for post and put
+    /// The http body. Used for post, put, patch, and delete.
     var body: Data?
 
     /// The Http headers
@@ -94,6 +94,7 @@ public class URLRequestBuilder {
         if let body {
             switch method {
                 case .put,
+                     .patch,
                      .delete,
                      .post:
                     request.httpBody = body

@@ -49,6 +49,18 @@ import Testing
         #expect(request.httpBody == data)
     }
 
+    @Test func setBodyDataOnPatchIncludesBody() throws {
+        let data = Data(#"{"name":"updated"}"#.utf8)
+        let request = try #require(URLRequestBuilder()
+            .setHost("api.example.com")
+            .setMethod(.patch)
+            .setBody(data)
+            .build())
+        #expect(request.httpMethod == "PATCH")
+        #expect(request.httpBody == data)
+        #expect(request.value(forHTTPHeaderField: "Content-Length") == String(data.count))
+    }
+
     @Test func setBodyDataOnDeleteIncludesBody() throws {
         let data = Data("Hello, World!".utf8)
         let builder = URLRequestBuilder()
