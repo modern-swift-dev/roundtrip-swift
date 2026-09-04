@@ -23,3 +23,5 @@ try response.checkForStatusCodeValidity(validStatusCode: [201])
 ```
 
 Do not call `cleanup()` before the upload finishes. Call it yourself only when you build a body but do not give it to a client.
+
+The builder handles partial stream writes and reports write failures from `build()`. A failed build removes the incomplete temporary file instead of returning a truncated body.

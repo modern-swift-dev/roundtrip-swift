@@ -103,19 +103,24 @@ public extension MultipartBody {
         /// Closed or not?
         private var closed: Bool = false
 
+        private var writeError: (any Error)?
+
         /// The initializer
         /// - parameter boundary: The multipart boundary.
         /// - throws: This initializer currently does not throw an error.
-        public init?(_ boundary: String = UUID().uuidString) throws {
-            self.boundary = boundary
-
-            url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)").appendingPathExtension("mpbody")
-
+        public convenience init?(_ boundary: String = UUID().uuidString) throws {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)").appendingPathExtension("mpbody")
             guard let data = OutputStream(url: url, append: false) else {
                 return nil
             }
-            self.data = data
-            self.data.open()
+            self.init(boundary: boundary, url: url, outputStream: data)
+        }
+
+        init(boundary: String, url: URL, outputStream: OutputStream) {
+            self.boundary = boundary
+            self.url = url
+            data = outputStream
+            data.open()
         }
 
         deinit {
@@ -299,41 +304,35 @@ public extension MultipartBody {
                 write("Content-Disposition: form-data; name=\"\(escapedName)\";\(Self.crlf)")
             }
             write("Content-Type: \(mimeType)\(Self.crlf)\(Self.crlf)")
-            bufferedWrite(data)
+            write(data)
         }
 
         /// Write a Data
         /// - parameter value: The data to write
         private func write(_ value: Data) {
-            let bytes = [UInt8](value)
-            _ = data.write(bytes, maxLength: bytes.count)
+            guard !closed, writeError == nil else {
+                return
+            }
+            value.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+                guard let baseAddress = bytes.bindMemory(to: UInt8.self).baseAddress else {
+                    return
+                }
+                var offset = 0
+                while offset < bytes.count {
+                    let written = data.write(baseAddress.advanced(by: offset), maxLength: min(65536, bytes.count - offset))
+                    guard written > 0 else {
+                        writeError = data.streamError ?? CocoaError(.fileWriteUnknown)
+                        return
+                    }
+                    offset += written
+                }
+            }
         }
 
         /// Write a string
         /// - parameter value: The string to write
         private func write(_ value: String) {
-            let bytes = [UInt8](value.utf8)
-            _ = data.write(bytes, maxLength: bytes.count)
-        }
-
-        /// Write the data using a buffered approach
-        ///
-        /// - parameter data: The data to write
-        /// - parameter bufferSize: The Size of the buffer. Defaults to 65536
-        private func bufferedWrite(_ value: Data, bufferSize: Int = 65536) {
-            let inputStream = InputStream(data: value)
-            inputStream.open()
-            defer {
-                inputStream.close()
-            }
-
-            var buffer = [UInt8](repeating: 0, count: bufferSize)
-            while inputStream.hasBytesAvailable {
-                let nbRead = inputStream.read(&buffer, maxLength: bufferSize)
-                if nbRead > 0 {
-                    _ = data.write(buffer, maxLength: nbRead)
-                }
-            }
+            write(Data(value.utf8))
         }
 
         /// Finish the body
@@ -345,8 +344,22 @@ public extension MultipartBody {
             write("\(Self.crlf)--\(boundary)--\(Self.crlf)")
             data.close()
             closed = true
-            let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(UInt64.init)
-            return MultipartBody(contentType: "multipart/form-data; boundary=\(boundary)", url: url, size: fileSize)
+            do {
+                if let error = writeError ?? data.streamError {
+                    throw error
+                }
+                let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(UInt64.init)
+                return MultipartBody(contentType: "multipart/form-data; boundary=\(boundary)", url: url, size: fileSize)
+            } catch {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    do {
+                        try FileManager.default.removeItem(at: url)
+                    } catch {
+                        RoundTripSupport.log(error)
+                    }
+                }
+                throw error
+            }
         }
     }
 }
