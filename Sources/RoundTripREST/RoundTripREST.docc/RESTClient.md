@@ -61,4 +61,4 @@ socket.connect()
 
 ## Multipart cleanup
 
-`postMultipart` removes the temporary body file after completion, including when request construction fails.
+`postMultipart` removes the temporary body file after completion, including when request construction fails. `NetworkService` retains the same file through an access-token refresh and retry, then removes it on success or failure. It does not load a second copy of the upload into memory for retry.

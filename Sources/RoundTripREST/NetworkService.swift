@@ -156,83 +156,17 @@
             timeout: TimeInterval = 3600.0,
             progress: Progress?
         ) async throws -> ApiResponse {
-            guard accessTokenRefresher != nil else {
-                return try await multiPartUploadWithoutRefresh(
-                    request: request,
-                    body: body,
-                    timeout: timeout,
-                    progress: progress
-                )
-            }
-
-            let bodyData: Data
-            do {
-                bodyData = try Data(contentsOf: body.url)
-            } catch {
-                throw ApiError.fileSystemError
-            }
-
-            let response = try await multiPartUploadWithoutRefresh(
-                request: request,
-                body: body,
-                timeout: timeout,
-                progress: progress
-            )
-            guard response.isUnauthorized,
-                  let failedAccessToken = bearerToken(from: request),
-                  let accessToken = try await refreshAccessToken(after: failedAccessToken) else {
-                return response
-            }
-
-            do {
-                try bodyData.write(to: body.url, options: .atomic)
-            } catch {
-                throw ApiError.fileSystemError
-            }
-
-            return try await multiPartUploadWithoutRefresh(
-                request: replacingBearerToken(in: request, with: accessToken),
-                body: body,
-                timeout: timeout,
-                progress: progress
-            )
-        }
-
-        private func multiPartUploadWithoutRefresh(
-            request: URLRequest,
-            body: MultipartBody,
-            timeout: TimeInterval,
-            progress: Progress?
-        ) async throws -> ApiResponse {
             defer {
                 body.cleanup()
             }
-
-            let taskReference = URLSessionTaskReference()
-            var uploadRequest = request
-            uploadRequest.timeoutInterval = timeout
-
-            return try await withTaskCancellationHandler {
-                try await withCheckedThrowingContinuation { continuation in
-                    let task = session.uploadTask(with: uploadRequest, fromFile: body.url) { data, response, error in
-                        if let error {
-                            continuation.resume(throwing: error)
-                            return
-                        }
-
-                        continuation.resume(returning: ApiResponse(data: data, response: response))
-                    }
-
-                    taskReference.store(task)
-                    if let progress, let size = fileSize(at: body.url) {
-                        progress.totalUnitCount += size
-                        progress.addChild(task.progress, withPendingUnitCount: size)
-                    }
-
-                    task.resume()
-                }
-            } onCancel: {
-                taskReference.cancel()
+            let fileURL = body.url
+            return try await executeWithRefresh(request: request) { [self] request in
+                try await uploadWithoutRefresh(
+                    request: request,
+                    fileUrl: fileURL,
+                    timeout: timeout,
+                    progress: progress
+                )
             }
         }
 
