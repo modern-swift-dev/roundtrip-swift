@@ -59,7 +59,7 @@
             /// The socket is disconnected with a close code.
             case disconnected(URLSessionWebSocketTask.CloseCode)
 
-            var isConnected: Bool {
+            public var isConnected: Bool {
                 switch self {
                     case .connected:
                         true
@@ -84,8 +84,11 @@
         private static let logger = Logger(subsystem: "RoundTripREST", category: "WebSocket")
         private let task: URLSessionWebSocketTask
 
-        @Published private(set) var state: WSSState = .disconnected(.normalClosure)
-        private(set) var event = PassthroughSubject<WSSEvent, Never>()
+        /// The current connection state and its publisher.
+        @Published public private(set) var state: WSSState = .disconnected(.normalClosure)
+
+        /// Publishes connection, message, and ping events.
+        public private(set) var event = PassthroughSubject<WSSEvent, Never>()
         private(set) var keepAliveConfig: KeepAliveConfig
 
         private var keepAliveCancellable: AnyCancellable?

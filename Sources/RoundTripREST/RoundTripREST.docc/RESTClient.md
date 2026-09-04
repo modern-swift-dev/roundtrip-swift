@@ -42,3 +42,20 @@ let client = RestClient(
 ```
 
 Call `execute(request:validStatusCode:)` for an `ApiResponse` or give Swift a `Decodable` result type to receive an `ApiOperationResult`. The default valid status code is 200.
+
+## WebSocket events
+
+On the main actor, create a socket with `webSocketClient(request:keepAlive:)` and keep its subscriptions alive. The socket exposes its current `state`, the `$state` publisher, and the `event` publisher for incoming messages and connection events.
+
+```swift
+let events = socket.event.sink { event in
+    if case let .textMessageReceived(text) = event {
+        print(text)
+    }
+}
+let states = socket.$state.sink { state in
+    print(state.isConnected)
+}
+socket.connect()
+```
+
