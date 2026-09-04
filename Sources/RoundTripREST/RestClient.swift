@@ -221,6 +221,9 @@
         ) async throws -> ApiResponse {
             do {
                 let body = try request.multiPartBody(encoder: encoder)
+                defer {
+                    body.cleanup()
+                }
                 var request = try createRequest(request)
                 request = try request.postMultipart(authorizations: nil, body: body)
 

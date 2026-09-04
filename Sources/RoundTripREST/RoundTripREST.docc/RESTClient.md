@@ -59,3 +59,6 @@ let states = socket.$state.sink { state in
 socket.connect()
 ```
 
+## Multipart cleanup
+
+`postMultipart` removes the temporary body file after completion, including when request construction fails.

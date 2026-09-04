@@ -220,6 +220,23 @@
             #expect(received)
         }
 
+        @Test func cleansMultipartBodyWhenRequestConstructionFails() async throws {
+            let builder = try #require(try MultipartBody.Builder())
+            builder.addPart(name: "field", part: .init(name: "field", text: "value"))
+            let body = try builder.build()
+            defer { body.cleanup() }
+            let service = RESTStubNetworkService()
+
+            await #expect(throws: ApiError.self) {
+                let _: ApiResponse = try await client(baseURL: nil, service: service).postMultipart(
+                    request: RESTMultipartRequest(body: body, error: nil)
+                )
+            }
+
+            #expect(service.multipartRequest == nil)
+            #expect(!FileManager.default.fileExists(atPath: body.url.path))
+        }
+
         @Test func uploadsAndPostsMultipartBodiesWithStubService() async throws {
             let service = RESTStubNetworkService()
             service.uploadResponse = ApiResponse(status: 201, data: Data(#"{"id":7,"name":"Upload"}"#.utf8))
