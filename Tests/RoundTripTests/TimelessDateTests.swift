@@ -173,6 +173,17 @@ import Testing
         #expect(set.count == 1)
     }
 
+    @Test func normalizedDatesHaveConsistentHashes() {
+        let overflowingDate = TimelessDate(year: 2024, month: 2, day: 30)
+        let normalizedDate = TimelessDate(year: 2024, month: 3, day: 1)
+
+        #expect(overflowingDate == normalizedDate)
+        #expect(overflowingDate.hashValue == normalizedDate.hashValue)
+        #expect(Set([overflowingDate, normalizedDate]).count == 1)
+        let dates = [overflowingDate: "event"]
+        #expect(dates[normalizedDate] == "event")
+    }
+
     // MARK: - Interval Tests
 
     @Test func intervalWithValidTimes() {

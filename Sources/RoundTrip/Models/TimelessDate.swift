@@ -70,6 +70,13 @@ extension TimelessDate: Equatable {
     }
 }
 
+// MARK: - Hashable
+public extension TimelessDate {
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(asDate?.timeIntervalSinceReferenceDate ?? 0)
+    }
+}
+
 // MARK: - Codable
 extension TimelessDate: Codable {
 
