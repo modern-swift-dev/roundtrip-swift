@@ -62,6 +62,27 @@ import Testing
         #expect(request.url?.query == "a%26b%20c=x%26y%3Dz")
     }
 
+    @Test func incrementallyAddsManyParametersWithoutChangingExistingEncoding() throws {
+        let builder = try #require(URLRequestBuilder(string: "https://example.com/path?existing=%2f&flag#fragment"))
+        for index in 0 ..< 2000 {
+            _ = builder.addQueryParam(name: "item", value: index)
+        }
+        let firstRequest = try #require(builder.build())
+        let firstURL = try #require(firstRequest.url)
+        let components = try #require(URLComponents(url: firstURL, resolvingAgainstBaseURL: false))
+        #expect(components.percentEncodedQueryItems?.first?.value == "%2f")
+        #expect(components.queryItems?.count == 2002)
+        #expect(components.queryItems?[1] == URLQueryItem(name: "flag", value: nil))
+        #expect(components.queryItems?.last == URLQueryItem(name: "item", value: "1999"))
+        #expect(components.fragment == "fragment")
+
+        _ = builder.setPath("updated").addQueryParams([.init(name: "a&b", value: "x+y")])
+        let secondRequest = try #require(builder.build())
+        #expect(secondRequest.url?.path == "/updated")
+        #expect(secondRequest.url?.query?.hasSuffix("a%26b=x%2By") == true)
+        #expect(firstRequest.url == firstURL)
+    }
+
     // MARK: - Query Params Array Tests
 
     @Test func addQueryParams() throws {

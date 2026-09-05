@@ -12,13 +12,14 @@ public extension URLRequestBuilder {
     /// - parameter value: the value of the parameter
     /// - returns: `self`
     func addQueryParam(name: String, value: any FormEncodable) -> Self {
-        var items = components.percentEncodedQueryItems ?? []
+        if pendingQueryItems == nil {
+            pendingQueryItems = components.percentEncodedQueryItems ?? []
+        }
         let item = URLQueryItem(
             name: name.addingPercentEncoding(withAllowedCharacters: .improvedQueryAllowed) ?? name,
             value: value.formEncodableValue().addingPercentEncoding(withAllowedCharacters: .improvedQueryAllowed)
         )
-        items.append(item)
-        components.percentEncodedQueryItems = items
+        pendingQueryItems?.append(item)
         return self
     }
 
@@ -29,7 +30,9 @@ public extension URLRequestBuilder {
         guard !parameters.isEmpty else {
             return self
         }
-        var items = components.percentEncodedQueryItems ?? []
+        if pendingQueryItems == nil {
+            pendingQueryItems = components.percentEncodedQueryItems ?? []
+        }
         for param in parameters {
             let item = URLQueryItem(
                 name: param.name.addingPercentEncoding(withAllowedCharacters: .improvedQueryAllowed) ?? param.name,
@@ -37,10 +40,7 @@ public extension URLRequestBuilder {
                     .formEncodableValue()
                     .addingPercentEncoding(withAllowedCharacters: .improvedQueryAllowed)
             )
-            items.append(item)
-        }
-        if !items.isEmpty {
-            components.percentEncodedQueryItems = items
+            pendingQueryItems?.append(item)
         }
         return self
     }

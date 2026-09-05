@@ -20,6 +20,9 @@ public class URLRequestBuilder {
     /// The components for the query string
     var components: URLComponents
 
+    /// Query items are accumulated separately to avoid reparsing the query on every append.
+    var pendingQueryItems: [URLQueryItem]?
+
     /// The http Method
     var method: Method = .get
 
@@ -74,6 +77,10 @@ public class URLRequestBuilder {
     /// Build Request
     /// - returns: The Newly URL Requests
     public func build() -> URLRequest? {
+        var components = components
+        if let pendingQueryItems {
+            components.percentEncodedQueryItems = pendingQueryItems
+        }
         guard let url = components.url else {
             return nil
         }
