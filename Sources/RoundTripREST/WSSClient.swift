@@ -106,8 +106,12 @@
             task = wssTask
             keepAliveConfig = keepAlive
             super.init()
-            task.delegate = self
+            task.delegate = WeakWebSocketDelegate(client: self)
             observeApplicationLifecycle()
+        }
+
+        deinit {
+            task.cancel()
         }
 
         private func observeApplicationLifecycle() {
@@ -184,14 +188,12 @@
 
         private func listen() {
             stopListening()
-            let listeningTask = Task { @MainActor [weak self] in
-                guard let self else {
-                    return
-                }
-
+            let listeningTask = Task { @MainActor [weak self, task] in
                 while !Task.isCancelled {
                     do {
-                        try await listenForMessage()
+                        let message = try await task.receive()
+                        try Task.checkCancellation()
+                        self?.handle(message)
                     } catch is CancellationError {
                         break
                     } catch let error as URLError where error.code == .cancelled {
@@ -200,7 +202,7 @@
                         break
                     } catch {
                         Self.log(error)
-                        event.send(.failure(error))
+                        self?.event.send(.failure(error))
                         break
                     }
                 }
@@ -210,9 +212,7 @@
             }
         }
 
-        private func listenForMessage() async throws {
-            let message = try await task.receive()
-            try Task.checkCancellation()
+        private func handle(_ message: URLSessionWebSocketTask.Message) {
             switch message {
                 case let .string(text):
                     Self.logger.debug("Received a text message")
@@ -322,6 +322,36 @@
                 stopKeepAlive()
                 stopListening()
                 Self.logger.debug("Disconnected with \(closeCode.rawValue)")
+            }
+        }
+    }
+
+    /// URLSession tasks retain their delegates, so the proxy must not retain the client.
+    @MainActor private final class WeakWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
+        private weak var client: WSSClient?
+
+        init(client: WSSClient) {
+            self.client = client
+        }
+
+        nonisolated func urlSession(
+            _ session: URLSession,
+            webSocketTask: URLSessionWebSocketTask,
+            didOpenWithProtocol protocolName: String?
+        ) {
+            Task { @MainActor in
+                client?.urlSession(session, webSocketTask: webSocketTask, didOpenWithProtocol: protocolName)
+            }
+        }
+
+        nonisolated func urlSession(
+            _ session: URLSession,
+            webSocketTask: URLSessionWebSocketTask,
+            didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+            reason: Data?
+        ) {
+            Task { @MainActor in
+                client?.urlSession(session, webSocketTask: webSocketTask, didCloseWith: closeCode, reason: reason)
             }
         }
     }

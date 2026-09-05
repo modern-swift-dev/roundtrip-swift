@@ -39,7 +39,8 @@
                 continuation.finish()
             }
 
-            client.urlSession(session, webSocketTask: task, didOpenWithProtocol: nil)
+            let delegate = try #require(task.delegate as? any URLSessionWebSocketDelegate)
+            delegate.urlSession?(session, webSocketTask: task, didOpenWithProtocol: nil)
             for await event in events {
                 if case .connected = event {
                     break
@@ -47,7 +48,7 @@
             }
             #expect(client.state.isConnected)
 
-            client.urlSession(session, webSocketTask: task, didCloseWith: .goingAway, reason: nil)
+            delegate.urlSession?(session, webSocketTask: task, didCloseWith: .goingAway, reason: nil)
             for await event in events {
                 if case .disconnectedGoingAway = event {
                     break
@@ -56,6 +57,17 @@
             if case .disconnected(.goingAway) = client.state {} else {
                 Issue.record("Expected goingAway state")
             }
+        }
+
+        @Test func taskDelegateDoesNotRetainClient() throws {
+            let (session, task) = try webSocketTask()
+            defer { session.invalidateAndCancel() }
+            var client: WSSClient? = WSSClient(task: task)
+            let isReleased = { [weak client] in client == nil }
+
+            client = nil
+
+            #expect(isReleased())
         }
 
         @Test func disconnectedClientIgnoresOutboundActions() throws {
