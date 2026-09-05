@@ -35,13 +35,13 @@
                     continuation.finish()
                 }
 
-                client.urlSession(session, webSocketTask: task, didOpenWithProtocol: nil)
+                (task.delegate as? any URLSessionWebSocketDelegate)?.urlSession?(session, webSocketTask: task, didOpenWithProtocol: nil)
                 eventLoop: for await eventLabel in eventStream {
                     events.append(eventLabel)
                     switch eventLabel {
                         case "connected":
                             eventReceived()
-                            client.urlSession(session, webSocketTask: task, didCloseWith: .goingAway, reason: nil)
+                            (task.delegate as? any URLSessionWebSocketDelegate)?.urlSession?(session, webSocketTask: task, didCloseWith: .goingAway, reason: nil)
                         case "disconnected:goingAway":
                             eventReceived()
                             break eventLoop
@@ -84,6 +84,19 @@
             #expect(events.isEmpty)
 
             _ = cancellable
+        }
+
+        @Test func releasingClientReleasesDelegateOwnership() throws {
+            let (session, task) = try makeWebSocketTask()
+            defer {
+                task.cancel()
+                session.invalidateAndCancel()
+            }
+            var client: WSSClient? = WSSClient(task: task)
+            weak var weakClient = client
+            #expect(weakClient != nil)
+            client = nil
+            #expect(weakClient == nil)
         }
 
         private func makeWebSocketTask() throws -> (URLSession, URLSessionWebSocketTask) {

@@ -106,7 +106,7 @@
         private var keepAliveCancellable: AnyCancellable?
 
         /// The Listen Cancellable
-        private var listenCancellable: AnyCancellable?
+        private var listenTask: Task<Void, Never>?
 
         /// Initializer
         /// - parameter wssTask: The WebSocket task
@@ -115,12 +115,17 @@
             task = wssTask
             keepAliveConfig = keepAlive
             super.init()
-            task.delegate = self
+            task.delegate = WeakWebSocketDelegate(client: self)
+        }
+
+        deinit {
+            listenTask?.cancel()
+            task.cancel()
         }
 
         private func stopListening() {
-            listenCancellable?.cancel()
-            listenCancellable = nil
+            listenTask?.cancel()
+            listenTask = nil
         }
     }
 
@@ -156,7 +161,7 @@
 
         /// Connect the websocket
         func connect() {
-            guard !state.isConnected else {
+            guard !state.isConnected, listenTask == nil else {
                 return
             }
             task.resume()
@@ -176,13 +181,22 @@
 
         /// Wait for the next full message
         private func listen() {
-            let listenTask = Task { @MainActor [weak self] in
-                guard let self else {
-                    return
+            listenTask = Task { @MainActor [weak self, task] in
+                defer {
+                    // A canceled listener may have already been replaced by connect().
+                    if !Task.isCancelled {
+                        self?.listenTask = nil
+                    }
                 }
                 do {
-                    try await self.listenForMessage()
-                    self.listen()
+                    while !Task.isCancelled {
+                        let message = try await task.receive()
+                        try Task.checkCancellation()
+                        guard self != nil else {
+                            return
+                        }
+                        self?.handle(message)
+                    }
                 } catch is CancellationError {
                     return
                 } catch let error as URLError where error.code == .cancelled {
@@ -190,17 +204,12 @@
                 } catch where Task.isCancelled {
                     return
                 } catch {
-                    self.event.send(.failure(error))
+                    self?.event.send(.failure(error))
                 }
-            }
-            listenCancellable = AnyCancellable {
-                listenTask.cancel()
             }
         }
 
-        private func listenForMessage() async throws {
-            let message = try await task.receive()
-            try Task.checkCancellation()
+        private func handle(_ message: URLSessionWebSocketTask.Message) {
             switch message {
                 case let .string(text):
                     event.send(.textMessageReceived(text))
@@ -297,6 +306,36 @@
                 self?.event.send(.disconnected(closeCode))
                 self?.stopKeepAlive()
                 self?.stopListening()
+            }
+        }
+    }
+
+    /// URLSession tasks retain their delegates, so the proxy must not retain the client.
+    @MainActor private final class WeakWebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
+        private weak var client: WSSClient?
+
+        init(client: WSSClient) {
+            self.client = client
+        }
+
+        nonisolated func urlSession(
+            _ session: URLSession,
+            webSocketTask: URLSessionWebSocketTask,
+            didOpenWithProtocol protocolName: String?
+        ) {
+            Task { @MainActor in
+                client?.urlSession(session, webSocketTask: webSocketTask, didOpenWithProtocol: protocolName)
+            }
+        }
+
+        nonisolated func urlSession(
+            _ session: URLSession,
+            webSocketTask: URLSessionWebSocketTask,
+            didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+            reason: Data?
+        ) {
+            Task { @MainActor in
+                client?.urlSession(session, webSocketTask: webSocketTask, didCloseWith: closeCode, reason: reason)
             }
         }
     }
