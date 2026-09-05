@@ -66,6 +66,26 @@ struct MultipartBodyWriteTests {
         #expect(try Data(contentsOf: body.url) == expected)
     }
 
+    @Test(arguments: [false, true]) func skipsEncodingAfterClosingOrWriteFailure(failed: Bool) throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-finished-\(UUID()).mpbody")
+        try Data().write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let stream = PartialOutputStream(maximumWrite: 3, failureResult: failed ? -1 : nil)
+        let builder = MultipartBody.Builder(boundary: "Boundary", url: url, outputStream: stream)
+        builder.addBinaryPart("first", data: Data("payload".utf8))
+        if !failed {
+            let body = try builder.build()
+            body.cleanup()
+        }
+
+        let payload = EncodingCounter()
+        builder.addJsonPart("ignored", data: payload)
+        #expect(payload.encodingCount == 0)
+        if failed {
+            #expect(throws: CocoaError.self) { _ = try builder.build() }
+        }
+    }
+
     @Test(arguments: [0, -1]) func rejectsFailedWritesAndRemovesPartialFile(result: Int) throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-write-\(UUID()).mpbody")
         try Data("partial".utf8).write(to: url)
@@ -106,5 +126,15 @@ private final class PartialOutputStream: OutputStream {
         let count = min(maximumWrite, len)
         written.append(buffer, count: count)
         return count
+    }
+}
+
+private final class EncodingCounter: Encodable {
+    var encodingCount = 0
+
+    func encode(to encoder: any Encoder) throws {
+        encodingCount += 1
+        var container = encoder.singleValueContainer()
+        try container.encode("payload")
     }
 }

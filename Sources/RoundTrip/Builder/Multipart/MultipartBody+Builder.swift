@@ -166,7 +166,7 @@ public extension MultipartBody {
             mimeType: String = URLRequestBuilder.MimeType.binary.rawValue,
             file: URL
         ) -> MultipartBody.Builder {
-            guard file.isFileURL, FileManager.default.fileExists(atPath: file.path) else {
+            guard !closed, writeError == nil, file.isFileURL, FileManager.default.fileExists(atPath: file.path) else {
                 return self
             }
             let fileSize: Int
@@ -244,7 +244,7 @@ public extension MultipartBody {
             /// - parameter compression: The compression. 0.0 being max, 1.0 being none
             /// - returns: self
             @discardableResult public func addJpgPart(_ name: String, fileName: String, image: UIImage, compression: CGFloat = 1.0) -> MultipartBody.Builder {
-                guard !name.isEmpty, !fileName.isEmpty, let data = image.jpegData(compressionQuality: compression) else {
+                guard !closed, writeError == nil, !name.isEmpty, !fileName.isEmpty, let data = image.jpegData(compressionQuality: compression) else {
                     return self
                 }
                 writeBodyPart(name: name, fileName: fileName, mimeType: URLRequestBuilder.MimeType.jpeg.rawValue, data: data)
@@ -257,7 +257,7 @@ public extension MultipartBody {
             /// - parameter image: The image to upload
             /// - returns: self
             @discardableResult public func addPngPart(_ name: String, fileName: String, image: UIImage) -> MultipartBody.Builder {
-                guard !name.isEmpty, !fileName.isEmpty, let data = image.pngData() else {
+                guard !closed, writeError == nil, !name.isEmpty, !fileName.isEmpty, let data = image.pngData() else {
                     return self
                 }
                 writeBodyPart(name: name, fileName: fileName, mimeType: URLRequestBuilder.MimeType.png.rawValue, data: data)
@@ -281,7 +281,7 @@ public extension MultipartBody {
                 return encoder
             }()
         ) -> MultipartBody.Builder {
-            guard !name.isEmpty else {
+            guard !closed, writeError == nil, !name.isEmpty else {
                 return self
             }
             let encodedData: Data
@@ -300,7 +300,7 @@ public extension MultipartBody {
         /// - parameter data: The form parameters
         /// - returns: self
         @discardableResult public func addFormEncodedPart(_ name: String, data: [URLRequestBuilder.FormParameter]) -> MultipartBody.Builder {
-            guard let data = data.toBody() else {
+            guard !closed, writeError == nil, let data = data.toBody() else {
                 return self
             }
             writeBodyPart(name: name, fileName: nil, mimeType: URLRequestBuilder.MimeType.formEncoded.rawValue, data: data)
@@ -324,6 +324,9 @@ public extension MultipartBody {
         /// - parameter mimeType: The mimeType of the data
         /// - parameter data: The data to append
         private func writeBodyPart(name: String, fileName: String?, mimeType: String, data: Data) {
+            guard !closed, writeError == nil else {
+                return
+            }
             writeBodyPartHeader(name: name, fileName: fileName, mimeType: mimeType)
             write(data)
         }
