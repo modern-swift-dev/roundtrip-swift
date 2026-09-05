@@ -76,6 +76,6 @@ public struct LocalizedData<ValueType: Codable & Sendable & Equatable>: Codable,
 
     /// Array of supported language codes
     public var supportedLanguages: [Locale.LanguageCode] {
-        Array(data.keys).compactMap { Locale.LanguageCode($0) }
+        data.keys.map { Locale.LanguageCode($0) }
     }
 }
