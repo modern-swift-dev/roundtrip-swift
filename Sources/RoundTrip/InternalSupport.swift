@@ -5,6 +5,12 @@ import Foundation
 import os
 
 enum RoundTripSupport {
+    private static let logger = Logger(subsystem: "RoundTrip", category: "HTTP")
+
+    static var isDebugLoggingEnabled: Bool {
+        logger.isEnabled(type: .debug)
+    }
+
     static func makeJSONEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
@@ -47,7 +53,6 @@ enum RoundTripSupport {
     }()
 
     static func log(_ error: any Error, message: String? = nil) {
-        let logger = Logger(subsystem: "RoundTrip", category: "HTTP")
         let description = (error as? any LocalizedError)?.errorDescription ?? String(describing: error)
         if let message {
             logger.error("\(message, privacy: .public) --> \(description, privacy: .public)")
@@ -56,8 +61,12 @@ enum RoundTripSupport {
         }
     }
 
-    static func logDebug(_ message: String) {
-        Logger(subsystem: "RoundTrip", category: "HTTP").debug("\(message, privacy: .public)")
+    static func logDebug(_ message: @autoclosure () -> String) {
+        guard isDebugLoggingEnabled else {
+            return
+        }
+        let description = message()
+        logger.debug("\(description, privacy: .public)")
     }
 
     static func isCapturable(_ error: any Error) -> Bool {

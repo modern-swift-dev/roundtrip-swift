@@ -392,6 +392,9 @@ public class HttpClientDelegate: NSObject, URLSessionTaskDelegate, @unchecked Se
     // Log performance information for the application HTTP Request
     #if !os(Linux)
         public func urlSession(_: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+            guard RoundTripSupport.isDebugLoggingEnabled else {
+                return
+            }
             if let request = task.currentRequest,
                let response = task.response as? HTTPURLResponse {
 
