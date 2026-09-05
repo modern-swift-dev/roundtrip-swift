@@ -67,6 +67,37 @@
             #expect(await refresher.failedTokens == ["expired-token"])
         }
 
+        @Test(arguments: [false, true])
+        func coalescedWaitersReceiveNilOrFailure(shouldFail: Bool) async {
+            let requests = RefreshRequestRecorder(behavior: .alwaysUnauthorized)
+            let refresher = RefreshStubRefresher(
+                replacementToken: nil,
+                delay: .milliseconds(100),
+                shouldFail: shouldFail
+            )
+            let service = makeService(requests: requests, refresher: refresher)
+
+            await withTaskGroup(of: Void.self) { group in
+                for _ in 0 ..< 5 {
+                    group.addTask {
+                        do {
+                            let response = try await service.execute(request: request(token: "expired-token"))
+                            #expect(!shouldFail)
+                            #expect(response.statusCode == 401)
+                        } catch {
+                            #expect(shouldFail)
+                            #expect((error as? URLError)?.code == .cannotConnectToHost)
+                        }
+                    }
+                }
+            }
+            #expect(await refresher.failedTokens == ["expired-token"])
+
+            // A completed refresh must leave no stale result for the next request.
+            _ = try? await service.execute(request: request(token: "expired-token"))
+            #expect(await refresher.failedTokens == ["expired-token", "expired-token"])
+        }
+
         @Test func cancellingCoalescedWaiterThrowsCancellation() async throws {
             let requests = RefreshRequestRecorder(behavior: .acceptReplacementToken)
             let refresher = RefreshStubRefresher(
@@ -236,11 +267,13 @@
         private let replacementToken: String?
         private let delay: Duration?
         private let refreshURL: URL?
+        private let shouldFail: Bool
 
-        init(replacementToken: String?, delay: Duration? = nil, refreshURL: URL? = nil) {
+        init(replacementToken: String?, delay: Duration? = nil, refreshURL: URL? = nil, shouldFail: Bool = false) {
             self.replacementToken = replacementToken
             self.delay = delay
             self.refreshURL = refreshURL
+            self.shouldFail = shouldFail
         }
 
         func refreshAccessToken(
@@ -250,6 +283,9 @@
             failedTokens.append(failedAccessToken)
             if let delay {
                 try await Task.sleep(for: delay)
+            }
+            if shouldFail {
+                throw URLError(.cannotConnectToHost)
             }
             if let refreshURL {
                 _ = try await execute(URLRequest(url: refreshURL))

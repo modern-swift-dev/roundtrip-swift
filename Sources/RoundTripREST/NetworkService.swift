@@ -307,15 +307,7 @@
             let failedAccessToken: String
         }
 
-        private struct GenerationKey: Hashable, Sendable {
-            let key: Key
-            let generation: Int
-        }
-
-        private var activeGenerations: [Key: Int] = [:]
-        private var nextGeneration = 0
-        private var completions: [GenerationKey: RefreshResult] = [:]
-        private var waiterCounts: [GenerationKey: Int] = [:]
+        private var waiters: [Key: [UUID: CheckedContinuation<String?, any Error>]] = [:]
 
         func refresh(
             failedAccessToken: String,
@@ -326,52 +318,48 @@
                 refresher: ObjectIdentifier(refresher),
                 failedAccessToken: failedAccessToken
             )
-            if let generation = activeGenerations[key] {
-                return try await waitForRefresh(
-                    generationKey: GenerationKey(key: key, generation: generation)
-                )
+            if waiters[key] != nil {
+                return try await waitForRefresh(key: key)
             }
 
-            nextGeneration += 1
-            let generationKey = GenerationKey(key: key, generation: nextGeneration)
-            activeGenerations[key] = generationKey.generation
+            waiters[key] = [:]
             do {
                 let accessToken = try await refresher.refreshAccessToken(
                     after: failedAccessToken,
                     execute: execute
                 )
-                finish(generationKey: generationKey, result: .success(accessToken))
+                finish(key: key, result: .success(accessToken))
                 return accessToken
             } catch {
-                finish(generationKey: generationKey, result: .failure(error))
+                finish(key: key, result: .failure(error))
                 throw error
             }
         }
 
-        private func waitForRefresh(generationKey: GenerationKey) async throws -> String? {
-            waiterCounts[generationKey, default: 0] += 1
-            defer {
-                waiterCounts[generationKey, default: 0] -= 1
-                if waiterCounts[generationKey] == 0 {
-                    waiterCounts[generationKey] = nil
-                    completions[generationKey] = nil
-                }
-            }
-            while completions[generationKey] == nil {
+        private func waitForRefresh(key: Key) async throws -> String? {
+            let id = UUID()
+            return try await withTaskCancellationHandler {
                 try Task.checkCancellation()
-                try await Task.sleep(for: .milliseconds(25))
+                return try await withCheckedThrowingContinuation { continuation in
+                    waiters[key]?[id] = continuation
+                }
+            } onCancel: {
+                Task { await self.cancelWaiter(key: key, id: id) }
             }
-            guard let completion = completions[generationKey] else {
-                preconditionFailure("Refresh completion disappeared while a waiter was active")
-            }
-            return try completion.get()
         }
 
-        private func finish(generationKey: GenerationKey, result: RefreshResult) {
-            if waiterCounts[generationKey, default: 0] > 0 {
-                completions[generationKey] = result
+        private func cancelWaiter(key: Key, id: UUID) {
+            waiters[key]?.removeValue(forKey: id)?.resume(throwing: CancellationError())
+        }
+
+        private func finish(key: Key, result: RefreshResult) {
+            let completedWaiters = waiters.removeValue(forKey: key)
+            guard let completedWaiters else {
+                return
             }
-            activeGenerations[generationKey.key] = nil
+            for continuation in completedWaiters.values {
+                continuation.resume(with: result)
+            }
         }
     }
 
