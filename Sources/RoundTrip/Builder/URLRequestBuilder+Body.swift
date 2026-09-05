@@ -49,6 +49,8 @@ public extension URLRequestBuilder {
         if includeBinaryBody {
             let data = try Data(contentsOf: body.url, options: .mappedIfSafe)
             self.body = data
+        } else {
+            self.body = nil
         }
         return self
     }

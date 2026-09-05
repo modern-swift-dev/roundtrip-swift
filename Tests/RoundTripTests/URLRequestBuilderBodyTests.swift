@@ -151,6 +151,23 @@ import Testing
         #expect(request.value(forHTTPHeaderField: "Content-Type")?.contains("multipart/form-data") == true)
     }
 
+    @Test func fileBackedMultipartBodyReplacesPreviousInMemoryBody() throws {
+        let multipartBuilder = try #require(try MultipartBody.Builder())
+        multipartBuilder.addPart(name: "field", part: .init(name: "field", text: "value"))
+        let body = try multipartBuilder.build()
+        defer { body.cleanup() }
+
+        let builder = URLRequestBuilder()
+            .setHost("api.example.com")
+            .setMethod(.post)
+            .setBody(Data(repeating: 65, count: 1_048_576))
+        _ = try builder.setBody(body)
+        let request = try #require(builder.build())
+        #expect(request.httpBody == nil)
+        #expect(request.value(forHTTPHeaderField: "Content-Length") == body.size.map(String.init))
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == body.contentType)
+    }
+
     @Test func setMultipartBodyWithBinaryBody() throws {
         guard let mpBuilder = try MultipartBody.Builder() else {
             Issue.record("Failed to create builder")
