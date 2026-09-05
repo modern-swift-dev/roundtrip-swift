@@ -249,13 +249,26 @@
             }
         }
 
+        func completeBackgroundEvents() {
+            let completionHandler = completionHandlerState.withLock { handler in
+                let completionHandler = handler
+                handler = nil
+                return completionHandler
+            }
+            guard let completionHandler else {
+                return
+            }
+            Task { @MainActor in
+                completionHandler()
+            }
+        }
+
         #if os(iOS) || os(watchOS)
             func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
                 if let identifier = session.configuration.identifier {
                     RoundTripSupport.logDebug("Background URL Session \(identifier) will complete background transfers")
                 }
-                let completionHandler = completionHandlerState.withLock { $0 }
-                completionHandler?()
+                completeBackgroundEvents()
             }
         #endif
     }

@@ -82,6 +82,29 @@
             #expect(!FileManager.default.fileExists(atPath: source.path))
         }
 
+        @Test(.timeLimit(.minutes(1))) func completesBackgroundEventsOnceOnMainActor() async {
+            let delegate = BackgroundSessionDelegate { _ in }
+            let (events, continuation) = AsyncStream<Void>.makeStream()
+            defer { continuation.finish() }
+            let invocationCount = Mutex(0)
+            delegate.completionHandlerState.withLock { handler in
+                handler = {
+                    MainActor.assertIsolated()
+                    invocationCount.withLock { $0 += 1 }
+                    continuation.yield(())
+                }
+            }
+
+            await Task.detached {
+                delegate.completeBackgroundEvents()
+                delegate.completeBackgroundEvents()
+            }.value
+            var iterator = events.makeAsyncIterator()
+            _ = await iterator.next()
+            #expect(invocationCount.withLock { $0 } == 1)
+            #expect(delegate.completionHandlerState.withLock { $0 == nil })
+        }
+
         private func requestURL() throws -> URL {
             try #require(URL(string: "https://example.com/upload"))
         }
