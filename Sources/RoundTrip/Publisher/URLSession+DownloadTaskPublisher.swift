@@ -124,12 +124,7 @@
                             return
                         }
 
-                        do {
-                            try FileManager.default.moveItem(at: tempFileURL, to: self.destination)
-                            self.deliver(url: self.destination, response: response)
-                        } catch {
-                            self.deliverFailure(error)
-                        }
+                        self.finishDownload(at: tempFileURL, response: response)
                     }
                     state.task = task
                     return task
@@ -155,6 +150,20 @@
                 }
                 deliveryLock.unlock()
                 task?.cancel()
+            }
+
+            private func finishDownload(at temporaryFile: URL, response: URLResponse) {
+                deliveryLock.lock()
+                defer { deliveryLock.unlock() }
+                guard state.withLock({ $0.phase == .active }) else {
+                    return
+                }
+                do {
+                    try FileManager.default.moveItem(at: temporaryFile, to: destination)
+                    deliver(url: destination, response: response)
+                } catch {
+                    deliverFailure(error)
+                }
             }
 
             private func deliver(url: URL, response: URLResponse) {
