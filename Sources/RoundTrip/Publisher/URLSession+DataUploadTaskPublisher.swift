@@ -60,7 +60,6 @@
             SubscriberType.Failure == any Error {
 
             private let session: URLSession
-            private let request: URLRequest
             private enum Phase: Equatable {
                 case awaitingDemand
                 case active
@@ -70,6 +69,7 @@
 
             private struct State {
                 var subscriber: SubscriberType?
+                var request: URLRequest?
                 var data: Data?
                 var task: URLSessionUploadTask?
                 var phase = Phase.awaitingDemand
@@ -82,9 +82,8 @@
 
             init(subscriber: SubscriberType, session: URLSession, request: URLRequest, data: Data, progress: Progress? = nil) {
                 self.session = session
-                self.request = request
                 self.progress = progress
-                state = Mutex(State(subscriber: subscriber, data: data))
+                state = Mutex(State(subscriber: subscriber, request: request, data: data))
             }
 
             public func request(_ demand: Subscribers.Demand) {
@@ -93,7 +92,7 @@
                 }
 
                 let transfer = state.withLock { state -> (task: URLSessionUploadTask, byteCount: Int64)? in
-                    guard state.phase == .awaitingDemand, let data = state.data else {
+                    guard state.phase == .awaitingDemand, let request = state.request, let data = state.data else {
                         return nil
                     }
                     state.phase = .active
@@ -114,6 +113,7 @@
                         self.deliver(data: data, response: response)
                     }
                     state.task = task
+                    state.request = nil
                     state.data = nil
                     return (task, Int64(data.count))
                 }
@@ -133,6 +133,7 @@
                     state.phase = .terminated
                     state.subscriber = nil
                     state.data = nil
+                    state.request = nil
                     let task = state.task
                     state.task = nil
                     return task

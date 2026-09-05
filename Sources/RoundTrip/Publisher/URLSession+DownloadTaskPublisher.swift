@@ -67,7 +67,6 @@
 
             private let destination: URL
             private let session: URLSession
-            private let request: URLRequest
             private enum Phase: Equatable {
                 case awaitingDemand
                 case active
@@ -77,6 +76,7 @@
 
             private struct State {
                 var subscriber: SubscriberType?
+                var request: URLRequest?
                 var task: URLSessionDownloadTask?
                 var phase = Phase.awaitingDemand
             }
@@ -89,11 +89,10 @@
 
             init(subscriber: SubscriberType, session: URLSession, request: URLRequest, destination: URL, progress: Progress? = nil, pendingUnitCount: Int64 = 1) {
                 self.session = session
-                self.request = request
                 self.destination = destination
                 self.progress = progress
                 self.pendingUnitCount = pendingUnitCount
-                state = Mutex(State(subscriber: subscriber))
+                state = Mutex(State(subscriber: subscriber, request: request))
             }
 
             public func request(_ demand: Subscribers.Demand) {
@@ -101,7 +100,7 @@
                     return
                 }
                 let task = state.withLock { state -> URLSessionDownloadTask? in
-                    guard state.phase == .awaitingDemand else {
+                    guard state.phase == .awaitingDemand, let request = state.request else {
                         return nil
                     }
                     state.phase = .active
@@ -127,6 +126,7 @@
                         self.finishDownload(at: tempFileURL, response: response)
                     }
                     state.task = task
+                    state.request = nil
                     return task
                 }
 
@@ -144,6 +144,7 @@
                     }
                     state.phase = .terminated
                     state.subscriber = nil
+                    state.request = nil
                     let task = state.task
                     state.task = nil
                     return task
