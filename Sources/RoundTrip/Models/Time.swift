@@ -67,9 +67,8 @@ public extension Time {
 
     /// Return with time as a date object
     func asDate(timeZone: TimeZone) -> Date? {
-        var calendar = Calendar(identifier: .gregorian)
+        var calendar = RoundTripSupport.posixCalendar
         calendar.timeZone = timeZone
-        calendar.locale = Locale(identifier: "en_US_POSIX")
         return calendar.date(
             bySettingHour: Int(hours),
             minute: Int(minutes),
@@ -134,9 +133,8 @@ extension Time: Codable {
 public extension Date {
 
     func asTime(_ timeZone: TimeZone) -> Time {
-        var calendar = Calendar(identifier: .gregorian)
+        var calendar = RoundTripSupport.posixCalendar
         calendar.timeZone = timeZone
-        calendar.locale = Locale(identifier: "en_US_POSIX")
         let hours = UInt(calendar.component(.hour, from: self))
         let minutes = UInt(calendar.component(.minute, from: self))
         let seconds = UInt(calendar.component(.second, from: self))

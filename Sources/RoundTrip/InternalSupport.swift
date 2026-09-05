@@ -23,28 +23,28 @@ enum RoundTripSupport {
         return decoder
     }
 
-    static var posixCalendar: Calendar {
+    static let posixCalendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .gmt
         calendar.locale = Locale(identifier: "en_US_POSIX")
         return calendar
-    }
+    }()
 
-    static var isoDateFormatter: DateFormatter {
+    static let isoDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .gmt
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
-    }
+    }()
 
-    static var isoTimeFormatter: DateFormatter {
+    static let isoTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .gmt
         formatter.dateFormat = "HH:mm:ss"
         return formatter
-    }
+    }()
 
     static func log(_ error: any Error, message: String? = nil) {
         let logger = Logger(subsystem: "RoundTrip", category: "HTTP")

@@ -32,9 +32,8 @@ public extension TimelessDate {
 
     /// Return with timeless date as a date object
     func asDate(timeZone: TimeZone) -> Date? {
-        var calendar = Calendar(identifier: .gregorian)
+        var calendar = RoundTripSupport.posixCalendar
         calendar.timeZone = timeZone
-        calendar.locale = Locale(identifier: "en_US_POSIX")
         let components = DateComponents(timeZone: timeZone, year: Int(year), month: Int(month), day: Int(day))
         return calendar.date(from: components)
     }
@@ -89,9 +88,7 @@ extension TimelessDate: Codable {
             throw CocoaError(.coderInvalidValue)
         }
 
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .gmt
-        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let calendar = RoundTripSupport.posixCalendar
         let components = calendar.dateComponents([.year, .month, .day], from: value)
         year = UInt(components.year ?? 1)
         month = UInt(components.month ?? 1)
@@ -100,9 +97,7 @@ extension TimelessDate: Codable {
 
     /// Encode
     public func encode(to encoder: any Encoder) throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .gmt
-        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let calendar = RoundTripSupport.posixCalendar
 
         let components = DateComponents(timeZone: .gmt, year: Int(year), month: Int(month), day: Int(day))
 
@@ -121,9 +116,8 @@ public extension Date {
     /// - parameter: The TimeZone to use
     /// - returns: The TimelessDate Object
     func asTimelessDate(_ timeZone: TimeZone) -> TimelessDate {
-        var calendar = Calendar(identifier: .gregorian)
+        var calendar = RoundTripSupport.posixCalendar
         calendar.timeZone = timeZone
-        calendar.locale = Locale(identifier: "en_US_POSIX")
         let year = UInt(calendar.component(.year, from: self))
         let month = UInt(calendar.component(.month, from: self))
         let day = UInt(calendar.component(.day, from: self))
