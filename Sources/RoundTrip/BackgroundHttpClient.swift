@@ -26,20 +26,20 @@
             public let file: URL
         }
 
-        private let completionHandlerState = Mutex<(@Sendable () -> Void)?>(nil)
+        private var sessionEvents: BackgroundSessionDelegate!
 
         /// The completion handler for background I/O.
         public var completionHandler: (@Sendable () -> Void)? {
             get {
-                completionHandlerState.withLock { $0 }
+                sessionEvents.completionHandlerState.withLock { $0 }
             }
             set {
-                completionHandlerState.withLock { $0 = newValue }
+                sessionEvents.completionHandlerState.withLock { $0 = newValue }
             }
         }
 
         /// The URL Session
-        private var session: URLSession!
+        private(set) var session: URLSession!
 
         /// Background Session Events subject
         @MainActor @Published public var finishedTask: BackgroundTask?
@@ -98,11 +98,30 @@
             configuration.isDiscretionary = isDiscretionary
             configuration.urlCache = urlCache
             configuration.waitsForConnectivity = waitsForConnectivity
+            createSession(configuration: configuration)
+        }
+
+        @MainActor init(configuration: URLSessionConfiguration) {
+            super.init()
+            createSession(configuration: configuration)
+        }
+
+        private func createSession(configuration: URLSessionConfiguration) {
+            sessionEvents = BackgroundSessionDelegate { [weak self] task in
+                Task { @MainActor [weak self] in
+                    self?.finishedTask = task
+                }
+            }
             session = URLSession(
                 configuration: configuration,
-                delegate: self,
+                delegate: sessionEvents,
                 delegateQueue: operationQueue
             )
+        }
+
+        deinit {
+            // URLSession keeps the delegate alive until existing transfers and callbacks finish.
+            session.finishTasksAndInvalidate()
         }
 
         /// Download specified URL into a background session
@@ -159,7 +178,31 @@
     // MARK: - URLSessionDownloadDelegate
     extension BackgroundHttpClient: URLSessionDownloadDelegate {
 
-        public func urlSession(
+        public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+            sessionEvents.urlSession(session, downloadTask: downloadTask, didFinishDownloadingTo: location)
+        }
+
+        public func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+            sessionEvents.urlSession(session, task: task, didFinishCollecting: metrics)
+        }
+
+        #if os(iOS) || os(watchOS)
+            public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+                sessionEvents.urlSessionDidFinishEvents(forBackgroundURLSession: session)
+            }
+        #endif
+    }
+
+    /// Retained by URLSession through graceful invalidation, independently of the client.
+    final class BackgroundSessionDelegate: NSObject, URLSessionDownloadDelegate {
+        let completionHandlerState = Mutex<(@Sendable () -> Void)?>(nil)
+        private let didFinish: @Sendable (BackgroundHttpClient.BackgroundTask) -> Void
+
+        init(didFinish: @escaping @Sendable (BackgroundHttpClient.BackgroundTask) -> Void) {
+            self.didFinish = didFinish
+        }
+
+        func urlSession(
             _ session: URLSession,
             downloadTask: URLSessionDownloadTask,
             didFinishDownloadingTo location: URL
@@ -172,16 +215,14 @@
                     .appendingPathComponent(UUID().uuidString)
                     .appendingPathExtension(currentURL.pathExtension)
                 try FileManager.default.moveItem(at: location, to: newFile)
-                let task = BackgroundTask(sessionId: identifier, requestURL: currentURL, file: newFile)
-                Task { @MainActor [weak self] in
-                    self?.finishedTask = task
-                }
+                let task = BackgroundHttpClient.BackgroundTask(sessionId: identifier, requestURL: currentURL, file: newFile)
+                didFinish(task)
             } catch {
                 RoundTripSupport.log(error)
             }
         }
 
-        public func urlSession(_: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        func urlSession(_: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
             guard RoundTripSupport.isDebugLoggingEnabled else {
                 return
             }
@@ -209,10 +250,11 @@
         }
 
         #if os(iOS) || os(watchOS)
-            public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+            func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
                 if let identifier = session.configuration.identifier {
                     RoundTripSupport.logDebug("Background URL Session \(identifier) will complete background transfers")
                 }
+                let completionHandler = completionHandlerState.withLock { $0 }
                 completionHandler?()
             }
         #endif

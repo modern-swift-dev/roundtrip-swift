@@ -3,7 +3,8 @@
     #if canImport(FoundationNetworking)
         import FoundationNetworking
     #endif
-    import RoundTrip
+    @testable import RoundTrip
+    import Synchronization
     import Testing
 
     @MainActor @Suite(.serialized) struct BackgroundHttpClientTests {
@@ -50,6 +51,35 @@
                     file: missingFile
                 )
             }
+        }
+
+        @Test func releasingBackgroundClientDoesNotLeaveDelegateCycle() {
+            var client: BackgroundHttpClient? = BackgroundHttpClient(name: "BackgroundHttpClientTests.release.\(UUID())")
+            let isReleased = { [weak client] in client == nil }
+            client = nil
+            #expect(isReleased())
+        }
+
+        @Test func independentDelegatePreservesCompletedDownload() throws {
+            let completed = Mutex<BackgroundHttpClient.BackgroundTask?>(nil)
+            let delegate = BackgroundSessionDelegate { task in completed.withLock { $0 = task } }
+            let name = "BackgroundHttpClientTests.persistence.\(UUID())"
+            let session = URLSession(configuration: .background(withIdentifier: name))
+            defer { session.invalidateAndCancel() }
+            let task = session.downloadTask(with: try requestURL())
+            let source = FileManager.default.temporaryDirectory.appendingPathComponent("background-\(UUID()).txt")
+            let payload = Data("completed download".utf8)
+            try payload.write(to: source)
+            defer { try? FileManager.default.removeItem(at: source) }
+
+            delegate.urlSession(session, downloadTask: task, didFinishDownloadingTo: source)
+
+            let result = try #require(completed.withLock { $0 })
+            defer { try? FileManager.default.removeItem(at: result.file) }
+            #expect(result.sessionId == name)
+            #expect(result.requestURL == task.currentRequest?.url)
+            #expect(try Data(contentsOf: result.file) == payload)
+            #expect(!FileManager.default.fileExists(atPath: source.path))
         }
 
         private func requestURL() throws -> URL {
