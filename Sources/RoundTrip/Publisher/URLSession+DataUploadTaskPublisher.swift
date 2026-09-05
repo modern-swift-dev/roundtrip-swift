@@ -59,7 +59,6 @@
             SubscriberType.Input == (data: Data?, response: URLResponse),
             SubscriberType.Failure == any Error {
 
-            private let data: Data
             private let session: URLSession
             private let request: URLRequest
             private enum Phase: Equatable {
@@ -71,6 +70,7 @@
 
             private struct State {
                 var subscriber: SubscriberType?
+                var data: Data?
                 var task: URLSessionUploadTask?
                 var phase = Phase.awaitingDemand
             }
@@ -83,9 +83,8 @@
             init(subscriber: SubscriberType, session: URLSession, request: URLRequest, data: Data, progress: Progress? = nil) {
                 self.session = session
                 self.request = request
-                self.data = data
                 self.progress = progress
-                state = Mutex(State(subscriber: subscriber))
+                state = Mutex(State(subscriber: subscriber, data: data))
             }
 
             public func request(_ demand: Subscribers.Demand) {
@@ -93,8 +92,8 @@
                     return
                 }
 
-                let task = state.withLock { state -> URLSessionUploadTask? in
-                    guard state.phase == .awaitingDemand else {
+                let transfer = state.withLock { state -> (task: URLSessionUploadTask, byteCount: Int64)? in
+                    guard state.phase == .awaitingDemand, let data = state.data else {
                         return nil
                     }
                     state.phase = .active
@@ -115,13 +114,14 @@
                         self.deliver(data: data, response: response)
                     }
                     state.task = task
-                    return task
+                    state.data = nil
+                    return (task, Int64(data.count))
                 }
 
-                if let taskProgress = task?.progress {
-                    progress?.addChild(taskProgress, withPendingUnitCount: Int64(data.count))
+                if let transfer {
+                    progress?.addChild(transfer.task.progress, withPendingUnitCount: transfer.byteCount)
+                    transfer.task.resume()
                 }
-                task?.resume()
             }
 
             public func cancel() {
@@ -132,6 +132,7 @@
                     }
                     state.phase = .terminated
                     state.subscriber = nil
+                    state.data = nil
                     let task = state.task
                     state.task = nil
                     return task
