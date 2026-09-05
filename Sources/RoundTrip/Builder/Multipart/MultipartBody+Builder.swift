@@ -169,14 +169,43 @@ public extension MultipartBody {
             guard file.isFileURL, FileManager.default.fileExists(atPath: file.path) else {
                 return self
             }
-            let data: Data
+            let fileSize: Int
             do {
-                data = try Data(contentsOf: file, options: .alwaysMapped)
+                guard let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+                    return self
+                }
+                fileSize = size
             } catch {
                 RoundTripSupport.log(error)
                 return self
             }
-            writeBodyPart(name: name, fileName: fileName, mimeType: mimeType, data: data)
+            guard let input = InputStream(url: file) else {
+                return self
+            }
+            input.open()
+            defer { input.close() }
+            if let error = input.streamError {
+                RoundTripSupport.log(error)
+                return self
+            }
+            writeBodyPartHeader(name: name, fileName: fileName, mimeType: mimeType)
+            // Keep file copying bounded even when the input cannot be memory mapped.
+            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 65536) { buffer in
+                guard let baseAddress = buffer.baseAddress else {
+                    return
+                }
+                // Snapshot the length before writing headers: the source can alias this output.
+                var remainingBytes = fileSize
+                while remainingBytes > 0, !closed, writeError == nil {
+                    let count = input.read(baseAddress, maxLength: min(buffer.count, remainingBytes))
+                    guard count > 0 else {
+                        writeError = input.streamError ?? CocoaError(.fileReadUnknown)
+                        return
+                    }
+                    write(UnsafeBufferPointer(start: baseAddress, count: count))
+                    remainingBytes -= count
+                }
+            }
             return self
         }
 
@@ -295,6 +324,11 @@ public extension MultipartBody {
         /// - parameter mimeType: The mimeType of the data
         /// - parameter data: The data to append
         private func writeBodyPart(name: String, fileName: String?, mimeType: String, data: Data) {
+            writeBodyPartHeader(name: name, fileName: fileName, mimeType: mimeType)
+            write(data)
+        }
+
+        private func writeBodyPartHeader(name: String, fileName: String?, mimeType: String) {
             let escapedName = escapeHeaderValue(name)
             write("\(Self.crlf)--\(boundary)\(Self.crlf)")
             if let fileName {
@@ -304,28 +338,28 @@ public extension MultipartBody {
                 write("Content-Disposition: form-data; name=\"\(escapedName)\";\(Self.crlf)")
             }
             write("Content-Type: \(mimeType)\(Self.crlf)\(Self.crlf)")
-            write(data)
         }
 
         /// Write a Data
         /// - parameter value: The data to write
         private func write(_ value: Data) {
-            guard !closed, writeError == nil else {
+            value.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+                write(bytes.bindMemory(to: UInt8.self))
+            }
+        }
+
+        private func write(_ bytes: UnsafeBufferPointer<UInt8>) {
+            guard !closed, writeError == nil, let baseAddress = bytes.baseAddress else {
                 return
             }
-            value.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
-                guard let baseAddress = bytes.bindMemory(to: UInt8.self).baseAddress else {
+            var offset = 0
+            while offset < bytes.count {
+                let written = data.write(baseAddress.advanced(by: offset), maxLength: min(65536, bytes.count - offset))
+                guard written > 0 else {
+                    writeError = data.streamError ?? CocoaError(.fileWriteUnknown)
                     return
                 }
-                var offset = 0
-                while offset < bytes.count {
-                    let written = data.write(baseAddress.advanced(by: offset), maxLength: min(65536, bytes.count - offset))
-                    guard written > 0 else {
-                        writeError = data.streamError ?? CocoaError(.fileWriteUnknown)
-                        return
-                    }
-                    offset += written
-                }
+                offset += written
             }
         }
 
