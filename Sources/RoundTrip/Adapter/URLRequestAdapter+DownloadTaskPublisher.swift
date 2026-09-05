@@ -14,7 +14,7 @@
         func adapt(_ adapter: (any URLRequestAdapter)?) throws -> URLSession.DownloadTaskPublisher {
             if let adapter {
                 let adapted = adapter.adapt(request)
-                return try session.downloadTaskPublisher(for: adapted, destination: destination, progress: progress, pendingUnitCount: pendingUnitCount)
+                return .init(request: adapted, destination: destination, session: session, progress: progress, pendingUnitCount: pendingUnitCount)
             }
             return self
         }

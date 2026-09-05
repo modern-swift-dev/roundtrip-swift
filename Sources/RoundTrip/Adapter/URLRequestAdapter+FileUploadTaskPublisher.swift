@@ -14,7 +14,7 @@
         func adapt(_ adapter: (any URLRequestAdapter)?) throws -> URLSession.FileUploadTaskPublisher {
             if let adapter {
                 let adapted = adapter.adapt(request)
-                return try session.fileUploadTaskPublisher(for: adapted, file: file, progress: progress)
+                return .init(request: adapted, file: file, session: session, progress: progress)
             }
             return self
         }
