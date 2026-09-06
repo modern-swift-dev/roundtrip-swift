@@ -7,3 +7,6 @@ DerivedData/
 .DS_Store
 Website/node_modules/
 Website/dist/
+
+# Legacy generated documentation
+/docs/

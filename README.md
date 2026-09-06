@@ -99,7 +99,7 @@ print(result.value.name)
 
 ## Documentation
 
-Read the [RoundTrip documentation](https://modern-swift-dev.github.io/roundtrip-swift/) on GitHub Pages. Start with the [installation and request guide](https://modern-swift-dev.github.io/roundtrip-swift/documentation/getting-started/), then use the generated DocC references for [RoundTrip](https://modern-swift-dev.github.io/roundtrip-swift/api/roundtrip/documentation/roundtrip/) and [RoundTripREST](https://modern-swift-dev.github.io/roundtrip-swift/api/roundtrip-rest/).
+Read the [RoundTrip documentation](https://modern-swift-dev.github.io/docs/roundtrip-swift/) on GitHub Pages. Start with the [installation and request guide](https://modern-swift-dev.github.io/docs/roundtrip-swift/documentation/getting-started/), then use the generated DocC references for [RoundTrip](https://modern-swift-dev.github.io/docs/roundtrip-swift/api/roundtrip/documentation/roundtrip/) and [RoundTripREST](https://modern-swift-dev.github.io/docs/roundtrip-swift/api/roundtrip-rest/).
 
 ## Contributing
 

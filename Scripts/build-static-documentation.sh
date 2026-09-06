@@ -4,7 +4,7 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_directory="$repository_root/.build/site"
-site_base_path="${SITE_BASE_PATH-/roundtrip-swift}"
+site_base_path="${SITE_BASE_PATH-/docs/roundtrip-swift}"
 site_base_path="${site_base_path#/}"
 site_base_path="${site_base_path%/}"
 

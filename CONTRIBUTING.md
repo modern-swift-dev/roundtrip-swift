@@ -2,7 +2,7 @@
 
 RoundTrip is in its first extraction from SwiftLibs. Keep changes focused on the HTTP or REST library, and update the matching DocC guide when a public API changes.
 
-Run the repository checks described by the project tooling before opening a change. Do not edit generated documentation output by hand. GitHub Pages publishes the generated site from `docs`.
+Run the repository checks described by the project tooling before opening a change. Do not edit generated documentation output by hand. Local builds write to `.build/site/`. The [central documentation repository](https://github.com/modern-swift-dev/docs) builds and publishes this module from `main` daily and on manual runs. Keep documentation sources here and do not commit generated output.
 
 When reporting a bug, include the platform, the request or response shape when safe to share, and a small reproducer. For behavior changes, add tests that exercise the URL loading path without relying on a live service.
 

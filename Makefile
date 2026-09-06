@@ -5,7 +5,7 @@ IOS_DESTINATION ?= platform=iOS Simulator,name=iPhone 17 Pro,OS=latest
 TVOS_DESTINATION ?= platform=tvOS Simulator,name=Apple TV 4K (3rd generation),OS=latest
 WATCHOS_DESTINATION ?= platform=watchOS Simulator,name=Apple Watch Series 11 (46mm),OS=latest
 VISIONOS_DESTINATION ?= platform=visionOS Simulator,name=Apple Vision Pro,OS=latest
-SITE_BASE_PATH ?= /roundtrip-swift
+SITE_BASE_PATH ?= /docs/roundtrip-swift
 
 export SITE_BASE_PATH
 
@@ -45,10 +45,10 @@ site:
 	bash Scripts/build-site.sh
 
 site-preview:
-	node Scripts/preview-site.mjs docs
+	node Scripts/preview-site.mjs .build/site
 
 internal-link:
-	node Website/scripts/check-internal-links.mjs docs
+	node Website/scripts/check-internal-links.mjs .build/site
 
 examples:
 	set -o pipefail && swift test --package-path Examples | mint run --no-install cpisciotta/xcbeautify -q
