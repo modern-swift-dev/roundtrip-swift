@@ -125,72 +125,75 @@
             #expect(await refresher.failedTokens == ["expired-token"])
         }
 
-        @Test func retriesFileUploadWithRefreshedToken() async throws {
-            let requests = RefreshRequestRecorder(behavior: .acceptReplacementToken)
-            let refresher = RefreshStubRefresher(replacementToken: "replacement-token")
-            let service = makeService(requests: requests, refresher: refresher)
-            let fileURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("roundtrip-refresh-upload-\(UUID().uuidString)")
-            try Data("upload".utf8).write(to: fileURL)
-            defer { try? FileManager.default.removeItem(at: fileURL) }
-            var uploadRequest = request(token: "expired-token")
-            uploadRequest.httpMethod = "POST"
+        // watchOS upload tasks bypass custom URLProtocol handlers and reach the network.
+        #if !os(watchOS)
+            @Test func retriesFileUploadWithRefreshedToken() async throws {
+                let requests = RefreshRequestRecorder(behavior: .acceptReplacementToken)
+                let refresher = RefreshStubRefresher(replacementToken: "replacement-token")
+                let service = makeService(requests: requests, refresher: refresher)
+                let fileURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("roundtrip-refresh-upload-\(UUID().uuidString)")
+                try Data("upload".utf8).write(to: fileURL)
+                defer { try? FileManager.default.removeItem(at: fileURL) }
+                var uploadRequest = request(token: "expired-token")
+                uploadRequest.httpMethod = "POST"
 
-            let response = try await service.upload(
-                request: uploadRequest,
-                fileUrl: fileURL,
-                timeout: 60,
-                progress: nil
-            )
+                let response = try await service.upload(
+                    request: uploadRequest,
+                    fileUrl: fileURL,
+                    timeout: 60,
+                    progress: nil
+                )
 
-            #expect(response.statusCode == 200)
-            #expect(requests.authorizationHeaders == ["Bearer expired-token", "Bearer replacement-token"])
-        }
-
-        @Test func retainsMultipartBodyThroughRefreshAndCleansAfterRetry() async throws {
-            let builder = try #require(try MultipartBody.Builder())
-            builder.addPart(name: "message", part: .init(name: "message", text: "hello"))
-            let body = try builder.build()
-            defer { body.cleanup() }
-            let expectedData = try Data(contentsOf: body.url)
-            let requests = RefreshRequestRecorder(behavior: .acceptReplacementToken)
-            let refresher = MultipartCheckingRefresher(bodyURL: body.url)
-            let service = makeService(requests: requests, refresher: refresher)
-            var uploadRequest = request(token: "expired-token")
-            uploadRequest.httpMethod = "POST"
-
-            let response = try await service.multiPartUpload(
-                request: uploadRequest,
-                body: body,
-                timeout: 60,
-                progress: nil
-            )
-
-            #expect(response.statusCode == 200)
-            #expect(await refresher.dataDuringRefresh == expectedData)
-            #expect(requests.authorizationHeaders == ["Bearer expired-token", "Bearer replacement-token"])
-            #expect(!FileManager.default.fileExists(atPath: body.url.path))
-        }
-
-        @Test func cleansMultipartBodyWhenRefreshThrows() async throws {
-            let builder = try #require(try MultipartBody.Builder())
-            builder.addPart(name: "message", part: .init(name: "message", text: "hello"))
-            let body = try builder.build()
-            defer { body.cleanup() }
-            let requests = RefreshRequestRecorder(behavior: .alwaysUnauthorized)
-            let refresher = MultipartCheckingRefresher(bodyURL: body.url, shouldFail: true)
-            let service = makeService(requests: requests, refresher: refresher)
-            var uploadRequest = request(token: "expired-token")
-            uploadRequest.httpMethod = "POST"
-
-            await #expect(throws: URLError.self) {
-                _ = try await service.multiPartUpload(request: uploadRequest, body: body, progress: nil)
+                #expect(response.statusCode == 200)
+                #expect(requests.authorizationHeaders == ["Bearer expired-token", "Bearer replacement-token"])
             }
 
-            #expect(await refresher.dataDuringRefresh != nil)
-            #expect(!FileManager.default.fileExists(atPath: body.url.path))
-            #expect(requests.authorizationHeaders == ["Bearer expired-token"])
-        }
+            @Test func retainsMultipartBodyThroughRefreshAndCleansAfterRetry() async throws {
+                let builder = try #require(try MultipartBody.Builder())
+                builder.addPart(name: "message", part: .init(name: "message", text: "hello"))
+                let body = try builder.build()
+                defer { body.cleanup() }
+                let expectedData = try Data(contentsOf: body.url)
+                let requests = RefreshRequestRecorder(behavior: .acceptReplacementToken)
+                let refresher = MultipartCheckingRefresher(bodyURL: body.url)
+                let service = makeService(requests: requests, refresher: refresher)
+                var uploadRequest = request(token: "expired-token")
+                uploadRequest.httpMethod = "POST"
+
+                let response = try await service.multiPartUpload(
+                    request: uploadRequest,
+                    body: body,
+                    timeout: 60,
+                    progress: nil
+                )
+
+                #expect(response.statusCode == 200)
+                #expect(await refresher.dataDuringRefresh == expectedData)
+                #expect(requests.authorizationHeaders == ["Bearer expired-token", "Bearer replacement-token"])
+                #expect(!FileManager.default.fileExists(atPath: body.url.path))
+            }
+
+            @Test func cleansMultipartBodyWhenRefreshThrows() async throws {
+                let builder = try #require(try MultipartBody.Builder())
+                builder.addPart(name: "message", part: .init(name: "message", text: "hello"))
+                let body = try builder.build()
+                defer { body.cleanup() }
+                let requests = RefreshRequestRecorder(behavior: .alwaysUnauthorized)
+                let refresher = MultipartCheckingRefresher(bodyURL: body.url, shouldFail: true)
+                let service = makeService(requests: requests, refresher: refresher)
+                var uploadRequest = request(token: "expired-token")
+                uploadRequest.httpMethod = "POST"
+
+                await #expect(throws: URLError.self) {
+                    _ = try await service.multiPartUpload(request: uploadRequest, body: body, progress: nil)
+                }
+
+                #expect(await refresher.dataDuringRefresh != nil)
+                #expect(!FileManager.default.fileExists(atPath: body.url.path))
+                #expect(requests.authorizationHeaders == ["Bearer expired-token"])
+            }
+        #endif
 
         @Test func nilRefresherPreservesStandardBehavior() async throws {
             let requests = RefreshRequestRecorder(behavior: .alwaysUnauthorized)
