@@ -1,3 +1,6 @@
+# Override with a shell-quoted file list to check only changed Swift files.
+SWIFT_FILES ?= .
+
 SHELL := /bin/bash
 
 SCHEME ?= RoundTrip-Package
@@ -5,7 +8,7 @@ IOS_DESTINATION ?= platform=iOS Simulator,name=iPhone 17 Pro,OS=latest
 TVOS_DESTINATION ?= platform=tvOS Simulator,name=Apple TV 4K (3rd generation),OS=latest
 WATCHOS_DESTINATION ?= platform=watchOS Simulator,name=Apple Watch Series 11 (46mm),OS=latest
 VISIONOS_DESTINATION ?= platform=visionOS Simulator,name=Apple Vision Pro,OS=latest
-.PHONY: setup format-check format lint tests documentation examples \
+.PHONY: setup format-check format lint test tests documentation examples \
 	apple macos ios tvos watchos visionos
 
 setup:
@@ -14,14 +17,16 @@ setup:
 	lefthook install
 
 format-check:
-	mint run --no-install nicklockwood/SwiftFormat . --config .swiftformat --lint --quiet
+	mint run --no-install nicklockwood/SwiftFormat $(SWIFT_FILES) --config .swiftformat --lint --quiet
 
 format:
-	mint run --no-install nicklockwood/SwiftFormat . --config .swiftformat --quiet
-	mint run --no-install realm/SwiftLint --config .swiftlint.yml --fix --quiet
+	mint run --no-install nicklockwood/SwiftFormat $(SWIFT_FILES) --config .swiftformat --quiet
+	mint run --no-install realm/SwiftLint lint --config .swiftlint.yml --fix --quiet --force-exclude $(SWIFT_FILES)
 
-lint:
-	mint run --no-install realm/SwiftLint --config .swiftlint.yml --quiet
+lint: lint-workflows
+	mint run --no-install realm/SwiftLint lint --config .swiftlint.yml --quiet --force-exclude $(SWIFT_FILES)
+
+test: tests
 
 tests:
 	set -o pipefail && swift test | mint run --no-install cpisciotta/xcbeautify -q
@@ -48,3 +53,8 @@ visionos:
 	set -o pipefail && xcodebuild test -scheme "$(SCHEME)" -destination "$(VISIONOS_DESTINATION)" | mint run --no-install cpisciotta/xcbeautify -q
 
 apple: macos ios tvos watchos visionos
+
+.PHONY: lint-workflows
+
+lint-workflows:
+	actionlint
