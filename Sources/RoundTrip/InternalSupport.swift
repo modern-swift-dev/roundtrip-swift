@@ -5,10 +5,11 @@ import Foundation
 import os
 
 enum RoundTripSupport {
-    private static let logger = Logger(subsystem: "RoundTrip", category: "HTTP")
+    private static let log = OSLog(subsystem: "RoundTrip", category: "HTTP")
+    private static let logger = Logger(log)
 
     static var isDebugLoggingEnabled: Bool {
-        logger.isEnabled(type: .debug)
+        log.isEnabled(type: .debug)
     }
 
     static func makeJSONEncoder() -> JSONEncoder {
