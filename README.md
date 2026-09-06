@@ -99,6 +99,8 @@ print(result.value.name)
 
 ## Documentation
 
+The [central documentation repository](https://github.com/modern-swift-dev/docs) owns Astro, the shared theme, and website/API generation. It builds from `main` daily and on manual runs. Edit page Markdown in `Documentation/Site/` and keep DocC catalogs beside the module sources. See the [docs README](https://github.com/modern-swift-dev/docs/blob/main/README.md) for local build and preview commands. Do not commit generated HTML to this repository.
+
 Read the [RoundTrip documentation](https://modern-swift-dev.github.io/docs/roundtrip-swift/) on GitHub Pages. Start with the [installation and request guide](https://modern-swift-dev.github.io/docs/roundtrip-swift/documentation/getting-started/), then use the generated DocC references for [RoundTrip](https://modern-swift-dev.github.io/docs/roundtrip-swift/api/roundtrip/documentation/roundtrip/) and [RoundTripREST](https://modern-swift-dev.github.io/docs/roundtrip-swift/api/roundtrip-rest/).
 
 ## Contributing
