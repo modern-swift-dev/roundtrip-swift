@@ -131,6 +131,8 @@
 
                 let body = try builder.build()
                 defer { body.cleanup() }
+                let multipart = try String(contentsOf: body.url, encoding: .utf8)
+                #expect(multipart.contains("Content-Disposition: form-data; name=\"field\"\r\n"))
 
                 let request = try #require(URLRequestBuilder(url: url))
                     .setMethod(.post)
