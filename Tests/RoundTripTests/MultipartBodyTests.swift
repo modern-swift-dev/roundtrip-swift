@@ -75,6 +75,20 @@ import Testing
         body.cleanup()
     }
 
+    @Test func builderWritesAValidTextFieldDisposition() throws {
+        guard let builder = try MultipartBody.Builder("Boundary") else {
+            Issue.record("Failed to create builder")
+            return
+        }
+        builder.addPart(name: "answers", part: .init(name: "answers", text: "[]"))
+
+        let body = try builder.build()
+        defer { body.cleanup() }
+
+        let content = try String(contentsOf: body.url, encoding: .utf8)
+        #expect(content.contains("Content-Disposition: form-data; name=\"answers\"\r\n"))
+    }
+
     @Test func builderAddsBinaryPartFromData() throws {
         let data = try #require("binary content".data(using: .utf8))
 

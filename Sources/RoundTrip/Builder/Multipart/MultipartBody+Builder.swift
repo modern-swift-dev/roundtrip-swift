@@ -338,7 +338,7 @@ public extension MultipartBody {
                 let escapedFileName = escapeHeaderValue(fileName)
                 write("Content-Disposition: form-data; name=\"\(escapedName)\"; filename=\"\(escapedFileName)\"\(Self.crlf)")
             } else {
-                write("Content-Disposition: form-data; name=\"\(escapedName)\";\(Self.crlf)")
+                write("Content-Disposition: form-data; name=\"\(escapedName)\"\(Self.crlf)")
             }
             write("Content-Type: \(mimeType)\(Self.crlf)\(Self.crlf)")
         }
